@@ -4,6 +4,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), ["VITE_", "REACT_APP_", "PORT"]);
   const port = Number(env.PORT) || 3001;
+  const allowedHosts = env.ALLOWED_HOSTS
+    ? env.ALLOWED_HOSTS.split(",").map((host) => host.trim()).filter(Boolean)
+    : true;
 
   return {
     plugins: [
@@ -33,11 +36,13 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      allowedHosts,
       host: "0.0.0.0",
       port,
       strictPort: true,
     },
     preview: {
+      allowedHosts,
       host: "0.0.0.0",
       port,
       strictPort: true,
