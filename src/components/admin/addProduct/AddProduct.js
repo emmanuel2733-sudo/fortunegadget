@@ -4,7 +4,7 @@ import React from 'react'
 import {useState} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { db, storage } from '../../../firebase/config'
+import { db, firebaseInitError, storage } from '../../../firebase/config'
 import Card from '../../card/Card'
 import styles from "./AddProduct.module.scss"
 import Loader from "../../loader/Loader";
@@ -32,6 +32,16 @@ const intialState = {
   desc: "",
 }
 
+const SAVE_TIMEOUT_MS = 20000;
+
+const withTimeout = (promise, timeoutMs, message) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]);
+
 const AddProduct = () => {
   const {id} = useParams()
   const products = useSelector(selectProducts);
@@ -54,6 +64,7 @@ const AddProduct = () => {
   const navigate = useNavigate()
   const isImageUploading = uploadProgress > 0 && uploadProgress < 100;
   const isUploadBusy = isPreparingImage || isImageUploading;
+  const isSaveDisabled = isUploadBusy || isLoading;
 
 
   function detectForm(id, f1,f2) {
@@ -69,6 +80,12 @@ const AddProduct = () => {
   };
 
   const handleImageChange = async (e) => {
+    if (!storage) {
+      toast.error(firebaseInitError || "Firebase Storage is not available.");
+      e.target.value = "";
+      return;
+    }
+
     const originalFile = e.target.files[0];
     const initialFileError = validateImageFile(originalFile);
     if (initialFileError) {
@@ -132,6 +149,11 @@ const AddProduct = () => {
     const addProduct = async (e) => {
       e.preventDefault()
 
+      if (!db) {
+        toast.error(firebaseInitError || "Cloud Firestore is not available.");
+        return;
+      }
+
       if (isUploadBusy) {
         toast.error("Please wait for the image upload to finish.");
         return;
@@ -144,9 +166,9 @@ const AddProduct = () => {
 
       setIsLoading(true)
 
-
       try {
-        await addDoc(collection(db, "products"), {
+        await withTimeout(
+          addDoc(collection(db, "products"), {
           name: product.name,
           imageURL: product.imageURL.trim(),
           price: Number(product.price),
@@ -154,23 +176,31 @@ const AddProduct = () => {
           brand: product.brand,
           desc: product.desc,
           createdAt: Timestamp.now().toDate(),
-});
-setIsLoading(false)
-setUploadProgress(0)
-setProduct({ ...intialState})
+          }),
+          SAVE_TIMEOUT_MS,
+          "Saving the product took too long. Check your Firebase configuration, Firestore rules, and network connection."
+        );
+        setUploadProgress(0)
+        setProduct({ ...intialState})
 
-navigate ("/admin/all-product", {
-  state: { successMessage: "Product uploaded successfully." },
-})
+        navigate ("/admin/all-product", {
+          state: { successMessage: "Product uploaded successfully." },
+        })
      
   } catch (error) {
-    setIsLoading(false)
     toast.error(error.message);
+  } finally {
+    setIsLoading(false)
   }
 };
 
 const editProduct = async (e) => {
   e.preventDefault()
+
+  if (!db) {
+    toast.error(firebaseInitError || "Cloud Firestore is not available.");
+    return;
+  }
 
   if (isUploadBusy) {
     toast.error("Please wait for the image upload to finish.");
@@ -189,7 +219,8 @@ const editProduct = async (e) => {
      await deleteObject(storageRef).catch(() => undefined)
   } 
   try {
-    await setDoc(doc(db, "products", id), {
+    await withTimeout(
+      setDoc(doc(db, "products", id), {
       name: product.name,
       imageURL: product.imageURL.trim(),
       price: Number(product.price),
@@ -198,20 +229,19 @@ const editProduct = async (e) => {
       desc: product.desc,
       createdAt: productEdit.createdAt,
       editedAt: Timestamp.now().toDate(),
+      }),
+      SAVE_TIMEOUT_MS,
+      "Updating the product took too long. Check your Firebase configuration, Firestore rules, and network connection."
+    );
+    navigate("/admin/all-product", {
+      state: { successMessage: "Product edited successfully." },
     });
-    setIsLoading(false);
-    toast.success("Product Edited Successfully");
-   navigate("/admin/all-product");
 
   }catch(error) {
-    setIsLoading(false)
     toast.error(error.message)
-    return;
+  } finally {
+    setIsLoading(false)
   }
-
-   navigate("/admin/all-product", {
-    state: { successMessage: "Product edited successfully." },
-   });
 };
 
   return (
@@ -307,8 +337,10 @@ const editProduct = async (e) => {
             {(e) => handleInputChange(e)}
              cols="30"rows="10"
             ></textarea>
-            <button className="--btn --btn-primary" disabled={isUploadBusy}>
-              {detectForm(id, "Save Product", "Edit Product")}
+            <button className="--btn --btn-primary" disabled={isSaveDisabled}>
+              {isLoading
+                ? detectForm(id, "Saving Product...", "Updating Product...")
+                : detectForm(id, "Save Product", "Edit Product")}
               </button>           
        </form>
       </Card>
