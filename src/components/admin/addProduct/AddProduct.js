@@ -1,4 +1,3 @@
-import { addDoc, collection, doc, setDoc, Timestamp } from 'firebase/firestore'
 import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage'
 import React from 'react'
 import {useState} from 'react'
@@ -12,6 +11,7 @@ import {useSelector} from "react-redux";
 import { selectProducts} from "../../../redux/slice/productSlice"; 
 import { normalizeCategory, normalizeProductCategory } from '../../../utils/category';
 import { compressImageFile } from '../../../utils/imageCompression';
+import { createProductViaRest, updateProductViaRest } from '../../../utils/firestoreRest';
 import { getStorageErrorMessage, validateImageFile } from '../../../utils/storage';
 
 
@@ -168,14 +168,14 @@ const AddProduct = () => {
 
       try {
         await withTimeout(
-          addDoc(collection(db, "products"), {
+          createProductViaRest({
           name: product.name,
           imageURL: product.imageURL.trim(),
           price: Number(product.price),
           category: normalizeCategory(product.category),
           brand: product.brand,
           desc: product.desc,
-          createdAt: Timestamp.now().toDate(),
+          createdAt: new Date(),
           }),
           SAVE_TIMEOUT_MS,
           "Saving the product took too long. Check your Firebase configuration, Firestore rules, and network connection."
@@ -220,7 +220,7 @@ const editProduct = async (e) => {
   } 
   try {
     await withTimeout(
-      setDoc(doc(db, "products", id), {
+      updateProductViaRest(id, {
       name: product.name,
       imageURL: product.imageURL.trim(),
       price: Number(product.price),
@@ -228,7 +228,7 @@ const editProduct = async (e) => {
       brand: product.brand,
       desc: product.desc,
       createdAt: productEdit.createdAt,
-      editedAt: Timestamp.now().toDate(),
+      editedAt: new Date(),
       }),
       SAVE_TIMEOUT_MS,
       "Updating the product took too long. Check your Firebase configuration, Firestore rules, and network connection."
