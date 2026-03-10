@@ -16,7 +16,9 @@ import CheckoutForm from "../../components/checkoutForm/CheckoutForm";
 import { isValidEmail, normalizeEmail, pickValidEmail } from "../../utils/email";
 
 const paystackPublicKey = (import.meta.env.REACT_APP_PAYSTACK_PUBLIC_KEY || "").trim();
-const apiBaseUrl = import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242";
+const apiBaseUrl = (
+  import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242"
+).replace(/\/+$/, "");
 
 const Checkout = () => {
   const [message, setMessage] = useState("Preparing Paystack checkout...");

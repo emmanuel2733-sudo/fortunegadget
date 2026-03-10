@@ -32,7 +32,9 @@ const intialState = {
 }
 
 const SAVE_TIMEOUT_MS = 20000;
-const apiBaseUrl = import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242";
+const apiBaseUrl = (
+  import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242"
+).replace(/\/+$/, "");
 
 const withTimeout = (promise, timeoutMs, message) =>
   Promise.race([

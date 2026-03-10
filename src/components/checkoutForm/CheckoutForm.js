@@ -28,7 +28,9 @@ const CheckoutForm = ({ paymentConfig }) => {
   const paymentCompletedRef = useRef(false);
   const saveInFlightRef = useRef(false);
   const stopPollingRef = useRef(false);
-  const apiBaseUrl = import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242";
+  const apiBaseUrl = (
+    import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242"
+  ).replace(/\/+$/, "");
 
   const dispatch = useDispatch();
   const navigate = useNavigate();

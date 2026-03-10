@@ -22,6 +22,12 @@ const adminUids = new Set(
     .filter(Boolean)
 );
 
+function normalizeUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+const normalizedFrontendUrl = normalizeUrl(FRONTEND_URL);
+
 function hasUsablePaystackSecret(key) {
   return Boolean(key) && key.startsWith("sk_") && !key.includes("your_secret_key");
 }
@@ -53,7 +59,19 @@ const adminDb = firebaseAdminApp ? admin.firestore(firebaseAdminApp) : null;
 
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (normalizeUrl(origin) === normalizedFrontendUrl) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
   })
 );
 app.use(express.json());
