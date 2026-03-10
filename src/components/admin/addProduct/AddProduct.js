@@ -3,7 +3,7 @@ import React from 'react'
 import {useState} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { db, firebaseInitError, storage } from '../../../firebase/config'
+import { auth, firebaseInitError, storage } from '../../../firebase/config'
 import Card from '../../card/Card'
 import styles from "./AddProduct.module.scss"
 import Loader from "../../loader/Loader";
@@ -11,7 +11,6 @@ import {useSelector} from "react-redux";
 import { selectProducts} from "../../../redux/slice/productSlice"; 
 import { normalizeCategory, normalizeProductCategory } from '../../../utils/category';
 import { compressImageFile } from '../../../utils/imageCompression';
-import { createProductViaRest, updateProductViaRest } from '../../../utils/firestoreRest';
 import { getStorageErrorMessage, validateImageFile } from '../../../utils/storage';
 
 
@@ -33,6 +32,7 @@ const intialState = {
 }
 
 const SAVE_TIMEOUT_MS = 20000;
+const apiBaseUrl = import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242";
 
 const withTimeout = (promise, timeoutMs, message) =>
   Promise.race([
@@ -41,6 +41,32 @@ const withTimeout = (promise, timeoutMs, message) =>
       setTimeout(() => reject(new Error(message)), timeoutMs);
     }),
   ]);
+
+const saveProductThroughBackend = async (endpoint, method, product) => {
+  if (!auth?.currentUser) {
+    throw new Error("You must be signed in before saving a product.");
+  }
+
+  const idToken = await auth.currentUser.getIdToken();
+  const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(product),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      json?.error || "Failed to save the product through the backend."
+    );
+  }
+
+  return json;
+};
 
 const AddProduct = () => {
   const {id} = useParams()
@@ -149,11 +175,6 @@ const AddProduct = () => {
     const addProduct = async (e) => {
       e.preventDefault()
 
-      if (!db) {
-        toast.error(firebaseInitError || "Cloud Firestore is not available.");
-        return;
-      }
-
       if (isUploadBusy) {
         toast.error("Please wait for the image upload to finish.");
         return;
@@ -168,7 +189,7 @@ const AddProduct = () => {
 
       try {
         await withTimeout(
-          createProductViaRest({
+          saveProductThroughBackend("/admin/products", "POST", {
           name: product.name,
           imageURL: product.imageURL.trim(),
           price: Number(product.price),
@@ -178,7 +199,7 @@ const AddProduct = () => {
           createdAt: new Date(),
           }),
           SAVE_TIMEOUT_MS,
-          "Saving the product took too long. Check your Firebase configuration, Firestore rules, and network connection."
+          "Saving the product took too long. Check the Railway backend, Firebase Admin credentials, and network connection."
         );
         setUploadProgress(0)
         setProduct({ ...intialState})
@@ -197,11 +218,6 @@ const AddProduct = () => {
 const editProduct = async (e) => {
   e.preventDefault()
 
-  if (!db) {
-    toast.error(firebaseInitError || "Cloud Firestore is not available.");
-    return;
-  }
-
   if (isUploadBusy) {
     toast.error("Please wait for the image upload to finish.");
     return;
@@ -214,13 +230,9 @@ const editProduct = async (e) => {
 
   setIsLoading(true)
 
-  if (product.imageURL !== productEdit.imageURL) {
-    const storageRef = ref(storage, productEdit.imageURL);
-     await deleteObject(storageRef).catch(() => undefined)
-  } 
   try {
     await withTimeout(
-      updateProductViaRest(id, {
+      saveProductThroughBackend(`/admin/products/${id}`, "PUT", {
       name: product.name,
       imageURL: product.imageURL.trim(),
       price: Number(product.price),
@@ -231,8 +243,14 @@ const editProduct = async (e) => {
       editedAt: new Date(),
       }),
       SAVE_TIMEOUT_MS,
-      "Updating the product took too long. Check your Firebase configuration, Firestore rules, and network connection."
+      "Updating the product took too long. Check the Railway backend, Firebase Admin credentials, and network connection."
     );
+
+    if (product.imageURL !== productEdit.imageURL) {
+      const storageRef = ref(storage, productEdit.imageURL);
+      await deleteObject(storageRef).catch(() => undefined)
+    }
+
     navigate("/admin/all-product", {
       state: { successMessage: "Product edited successfully." },
     });

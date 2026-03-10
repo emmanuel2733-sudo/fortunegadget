@@ -3,6 +3,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const https = require("https");
 const path = require("path");
+const admin = require("firebase-admin");
 
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 
@@ -11,10 +12,44 @@ const PORT = Number(process.env.PORT || 4242);
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 const PAYSTACK_API_HOST = "api.paystack.co";
 const paystackSecretKey = (process.env.PAYSTACK_SECRET_KEY || "").trim();
+const firebaseProjectId = (process.env.FIREBASE_PROJECT_ID || "").trim();
+const firebaseClientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+const firebasePrivateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+const adminUids = new Set(
+  (process.env.ADMIN_UIDS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+);
 
 function hasUsablePaystackSecret(key) {
   return Boolean(key) && key.startsWith("sk_") && !key.includes("your_secret_key");
 }
+
+function hasFirebaseAdminConfig() {
+  return Boolean(firebaseProjectId && firebaseClientEmail && firebasePrivateKey);
+}
+
+function getFirebaseAdminApp() {
+  if (!hasFirebaseAdminConfig()) {
+    return null;
+  }
+
+  if (admin.apps.length) {
+    return admin.app();
+  }
+
+  return admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: firebaseProjectId,
+      clientEmail: firebaseClientEmail,
+      privateKey: firebasePrivateKey,
+    }),
+  });
+}
+
+const firebaseAdminApp = getFirebaseAdminApp();
+const adminDb = firebaseAdminApp ? admin.firestore(firebaseAdminApp) : null;
 
 app.use(
   cors({
@@ -26,6 +61,87 @@ app.use(express.json());
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
+
+function toFirestoreDate(value) {
+  if (!value) {
+    return new Date();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function normalizeProductPayload(payload = {}) {
+  return {
+    name: String(payload.name || "").trim(),
+    imageURL: String(payload.imageURL || "").trim(),
+    price: Number(payload.price),
+    category: String(payload.category || "").trim(),
+    brand: String(payload.brand || "").trim(),
+    desc: String(payload.desc || "").trim(),
+    createdAt: toFirestoreDate(payload.createdAt),
+    ...(payload.editedAt ? { editedAt: toFirestoreDate(payload.editedAt) } : {}),
+  };
+}
+
+function validateProductPayload(product) {
+  if (!product.name) {
+    return "Product name is required.";
+  }
+
+  if (!product.imageURL) {
+    return "Product image URL is required.";
+  }
+
+  if (!Number.isFinite(product.price) || product.price <= 0) {
+    return "Product price must be greater than zero.";
+  }
+
+  if (!product.category) {
+    return "Product category is required.";
+  }
+
+  if (!product.brand) {
+    return "Product brand is required.";
+  }
+
+  if (!product.desc) {
+    return "Product description is required.";
+  }
+
+  return "";
+}
+
+async function requireAdminUser(req, res, next) {
+  try {
+    if (!firebaseAdminApp || !adminDb) {
+      return res.status(503).json({
+        error:
+          "Firebase Admin is not configured. Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and ADMIN_UIDS to backend variables.",
+      });
+    }
+
+    const authHeader = req.headers.authorization || "";
+
+    if (!authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing admin authorization token." });
+    }
+
+    const token = authHeader.slice("Bearer ".length).trim();
+    const decodedToken = await admin.auth(firebaseAdminApp).verifyIdToken(token);
+
+    if (adminUids.size > 0 && !adminUids.has(decodedToken.uid)) {
+      return res.status(403).json({ error: "You do not have admin access." });
+    }
+
+    req.user = decodedToken;
+    return next();
+  } catch (error) {
+    return res.status(401).json({
+      error: error?.message || "Unable to verify admin credentials.",
+    });
+  }
+}
 
 function toAmountInSmallestUnit(value) {
   const numeric = Number(value);
@@ -239,6 +355,55 @@ app.post("/verify-payment", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       error: error?.message || "Failed to verify payment",
+    });
+  }
+});
+
+app.post("/admin/products", requireAdminUser, async (req, res) => {
+  try {
+    const product = normalizeProductPayload(req.body);
+    const validationError = validateProductPayload(product);
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const docRef = await adminDb.collection("products").add(product);
+    return res.status(201).json({
+      id: docRef.id,
+      product,
+      success: true,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to create product.",
+    });
+  }
+});
+
+app.put("/admin/products/:id", requireAdminUser, async (req, res) => {
+  try {
+    const productId = String(req.params.id || "").trim();
+    const product = normalizeProductPayload(req.body);
+    const validationError = validateProductPayload(product);
+
+    if (!productId) {
+      return res.status(400).json({ error: "Product ID is required." });
+    }
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    await adminDb.collection("products").doc(productId).set(product, { merge: false });
+    return res.json({
+      id: productId,
+      product,
+      success: true,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to update product.",
     });
   }
 });
