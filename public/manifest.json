@@ -1,0 +1,16 @@
+{
+  "short_name": "Fortune Gadgets",
+  "name": "Fortune Gadgets",
+  "icons": [
+    {
+      "src": "/fg-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#10233f",
+  "background_color": "#0a1426"
+}

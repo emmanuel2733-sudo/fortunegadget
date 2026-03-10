@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title>Fortune Gadgets FG Logo</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10233f" />
+      <stop offset="100%" stop-color="#0a1426" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#bg)" />
+  <path
+    d="M30 30h48v12H44v16h30v12H44v28H30V30Z"
+    fill="#ffffff"
+  />
+  <path
+    d="M100 72H76V60h36v32c-8 5-17 8-28 8-23 0-39-15-39-36 0-22 17-37 40-37 11 0 20 3 27 10l-9 9c-5-5-11-7-18-7-14 0-25 9-25 25 0 15 10 24 24 24 5 0 10-1 15-3V72Z"
+    fill="#ff6a1a"
+  />
+</svg>
