@@ -282,7 +282,11 @@ const editProduct = async (e) => {
 
 
               <input type="file" accept="image/*"placeholder=
-              "Product Image"name="image" onChange=
+              "Product Image"name="image"
+              onClick={(e) => {
+                e.target.value = "";
+              }}
+              onChange=
               {(e) => handleImageChange (e)} />
               
               {product.imageURL === "" ? null :(
