@@ -12,7 +12,21 @@ export const productFallbackImage =
     </svg>
   `);
 
-export const getProductImage = (imageUrl) => imageUrl || productFallbackImage;
+export const getProductImage = (imageUrl) => {
+  const normalizedImageUrl =
+    typeof imageUrl === "string" ? imageUrl.trim() : "";
+
+  if (
+    !normalizedImageUrl ||
+    normalizedImageUrl === "undefined" ||
+    normalizedImageUrl === "null" ||
+    normalizedImageUrl.startsWith("gs://")
+  ) {
+    return productFallbackImage;
+  }
+
+  return normalizedImageUrl;
+};
 
 export const fallbackToProductImage = (event) => {
   event.currentTarget.src = productFallbackImage;

@@ -1,6 +1,6 @@
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, {useEffect, useState } from 'react'
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { db, storage } from '../../../firebase/config';
 import styles from "./ViewProducts.module.scss"
@@ -37,6 +37,19 @@ const ViewProducts = () => {
 
 
   const dispatch = useDispatch()
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const successMessage = location.state?.successMessage;
+
+    if (!successMessage) {
+      return;
+    }
+
+    toast.success(successMessage);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   useEffect (() => { 
     const normalizedProducts = data.map((product) => normalizeProductCategory(product));

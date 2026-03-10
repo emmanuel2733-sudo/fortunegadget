@@ -111,18 +111,22 @@ const AddProduct = () => {
       (error) => {
         toast.error(getStorageErrorMessage(error));
         setUploadProgress(0);
+        setIsPreparingImage(false);
       },
       () => {
         getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
           setProduct((currentProduct) => ({
             ...currentProduct,
-            imageURL: downloadURL,
+            imageURL: downloadURL.trim(),
           }));
+          setIsPreparingImage(false);
           toast.success("Image uploaded successfully.");
-    });
-  }
-);
-    setIsPreparingImage(false);
+        }).catch((error) => {
+          toast.error(getStorageErrorMessage(error));
+          setIsPreparingImage(false);
+        });
+      }
+    );
   };
   
     const addProduct = async (e) => {
@@ -144,7 +148,7 @@ const AddProduct = () => {
       try {
         await addDoc(collection(db, "products"), {
           name: product.name,
-          imageURL: product.imageURL,
+          imageURL: product.imageURL.trim(),
           price: Number(product.price),
           category: normalizeCategory(product.category),
           brand: product.brand,
@@ -155,8 +159,9 @@ setIsLoading(false)
 setUploadProgress(0)
 setProduct({ ...intialState})
 
-toast.success("Product uploaded successfully.");
-navigate ("/admin/all-product")
+navigate ("/admin/all-product", {
+  state: { successMessage: "Product uploaded successfully." },
+})
      
   } catch (error) {
     setIsLoading(false)
@@ -186,7 +191,7 @@ const editProduct = async (e) => {
   try {
     await setDoc(doc(db, "products", id), {
       name: product.name,
-      imageURL: product.imageURL,
+      imageURL: product.imageURL.trim(),
       price: Number(product.price),
       category: normalizeCategory(product.category),
       brand: product.brand,
@@ -201,7 +206,12 @@ const editProduct = async (e) => {
   }catch(error) {
     setIsLoading(false)
     toast.error(error.message)
+    return;
   }
+
+   navigate("/admin/all-product", {
+    state: { successMessage: "Product edited successfully." },
+   });
 };
 
   return (
