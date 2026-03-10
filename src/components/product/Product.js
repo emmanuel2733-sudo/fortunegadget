@@ -8,10 +8,11 @@ import { GET_PRICE_RANGE, selectProducts, STORE_PRODUCTS } from '../../redux/sli
 import spinnerImg from "../../assests/spinner.jpg"
 import {FaCogs} from "react-icons/fa"
 import { normalizeProductCategory } from '../../utils/category'
+import Card from '../card/Card';
 
 
 const Product = () => {
-  const {data, isLoading} = useFetchCollection("products");
+  const {data, isLoading, error} = useFetchCollection("products");
   const [showFilter, setShowFilter] = useState(false);
   const products = useSelector(selectProducts); 
   const dispatch = useDispatch();
@@ -51,9 +52,13 @@ const Product = () => {
           <img src={spinnerImg} 
           alt="Loading..." 
           style={{width: "50px"}} className="--center-all" />) : (
-
+          error ? (
+          <Card cardClass="--flex-center">
+            <p>{error}</p>
+          </Card>
+          ) : (
           <ProductList products={products}/>
-
+          )
         )}
           <div className={styles.icon} onClick = {toggleFilter}>
             <FaCogs size ={20} color= "orangered" />

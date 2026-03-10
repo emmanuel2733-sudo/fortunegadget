@@ -8,12 +8,17 @@ import emailjs from "@emailjs/browser";
 
 const Contact = () => {
   const form = useRef();
+  const emailJsServiceId = import.meta.env.REACT_APP_EMAILJS_SERVICE_ID;
 
   const sendEmail = (e) => {
     e.preventDefault();
-    console.log(form.current);
 
-    emailjs.sendForm(import.meta.env.REACT_APP_EMAILJS_SERVICE_ID, 'template_026u2kk', 
+    if (!emailJsServiceId) {
+      toast.error("EmailJS service ID is missing. Add REACT_APP_EMAILJS_SERVICE_ID first.");
+      return;
+    }
+
+    emailjs.sendForm(emailJsServiceId, 'template_026u2kk', 
     form.current, 'pTgV9LapYsKjkGeoo'
     )
       .then((result) => {

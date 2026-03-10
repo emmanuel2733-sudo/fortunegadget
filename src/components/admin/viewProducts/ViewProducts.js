@@ -16,13 +16,14 @@ import Search from '../../search/Search';
 import Pagination from '../../pagination/Pagination';
 import { normalizeProductCategory } from '../../../utils/category';
 import { fallbackToProductImage, getProductImage } from '../../../utils/image';
+import Card from '../../card/Card';
 
 
 
 
 const ViewProducts = () => {
   const [search, setSearch] = useState("");
-  const {data, isLoading} = useFetchCollection("products")
+  const {data, isLoading, error} = useFetchCollection("products")
   const products = useSelector(selectProducts)
   const filteredProducts = useSelector(selectFilteredProducts)
  
@@ -130,7 +131,11 @@ onSnapshot(q, (snapshot) => {
       <Search value={search} onChange={(e) => setSearch(e.target.value)} />
 
     </div>
-    {filteredProducts.lenght === 0 ? (
+    {error ? (
+      <Card cardClass={styles.search}>
+        <p>{error}</p>
+      </Card>
+    ) : filteredProducts.length === 0 ? (
       <p>No product found</p>
     ) : (
       <table>
