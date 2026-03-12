@@ -10,11 +10,20 @@ dotenv.config({ path: path.resolve(__dirname, ".env") });
 const app = express();
 const PORT = Number(process.env.PORT || 4242);
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const AUTH_PROVIDER = (
+  process.env.AUTH_PROVIDER ||
+  process.env.BACKEND_PROVIDER ||
+  "firebase"
+)
+  .trim()
+  .toLowerCase();
 const PAYSTACK_API_HOST = "api.paystack.co";
 const paystackSecretKey = (process.env.PAYSTACK_SECRET_KEY || "").trim();
 const firebaseProjectId = (process.env.FIREBASE_PROJECT_ID || "").trim();
 const firebaseClientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
 const firebasePrivateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+const supabaseUrl = normalizeUrl(process.env.SUPABASE_URL || "");
+const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const adminUids = new Set(
   (process.env.ADMIN_UIDS || "")
     .split(",")
@@ -34,6 +43,10 @@ function hasUsablePaystackSecret(key) {
 
 function hasFirebaseAdminConfig() {
   return Boolean(firebaseProjectId && firebaseClientEmail && firebasePrivateKey);
+}
+
+function hasSupabaseAdminConfig() {
+  return Boolean(supabaseUrl && supabaseServiceRoleKey);
 }
 
 function getFirebaseAdminApp() {
@@ -56,6 +69,29 @@ function getFirebaseAdminApp() {
 
 const firebaseAdminApp = getFirebaseAdminApp();
 const adminDb = firebaseAdminApp ? admin.firestore(firebaseAdminApp) : null;
+
+async function getSupabaseUserFromToken(token) {
+  if (!hasSupabaseAdminConfig()) {
+    throw new Error(
+      "Supabase Admin is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to backend variables."
+    );
+  }
+
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      apikey: supabaseServiceRoleKey,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload?.msg || payload?.message || "Unable to verify Supabase credentials.");
+  }
+
+  return payload;
+}
 
 app.use(
   cors({
@@ -132,13 +168,6 @@ function validateProductPayload(product) {
 
 async function requireAdminUser(req, res, next) {
   try {
-    if (!firebaseAdminApp || !adminDb) {
-      return res.status(503).json({
-        error:
-          "Firebase Admin is not configured. Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and ADMIN_UIDS to backend variables.",
-      });
-    }
-
     const authHeader = req.headers.authorization || "";
 
     if (!authHeader.startsWith("Bearer ")) {
@@ -146,6 +175,25 @@ async function requireAdminUser(req, res, next) {
     }
 
     const token = authHeader.slice("Bearer ".length).trim();
+
+    if (AUTH_PROVIDER === "supabase") {
+      const user = await getSupabaseUserFromToken(token);
+
+      if (adminUids.size > 0 && !adminUids.has(user.id)) {
+        return res.status(403).json({ error: "You do not have admin access." });
+      }
+
+      req.user = user;
+      return next();
+    }
+
+    if (!firebaseAdminApp || !adminDb) {
+      return res.status(503).json({
+        error:
+          "Firebase Admin is not configured. Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and ADMIN_UIDS to backend variables.",
+      });
+    }
+
     const decodedToken = await admin.auth(firebaseAdminApp).verifyIdToken(token);
 
     if (adminUids.size > 0 && !adminUids.has(decodedToken.uid)) {

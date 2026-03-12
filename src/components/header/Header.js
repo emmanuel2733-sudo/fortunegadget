@@ -4,8 +4,6 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import styles from "./Header.module.scss";
 import {FaShoppingCart, FaTimes, FaUserCircle } from "react-icons/fa";
 import{HiOutlineMenuAlt3} from "react-icons/hi";
-import { auth, isFirebaseEnabled } from "../../firebase/config";
-import { onAuthStateChanged, signOut } from "firebase/auth";
 import { toast } from "react-toastify";
 import { useDispatch, useSelector } from "react-redux";
 import {  REMOVE_ACTIVE_USER, SET_ACTIVE_USER } from "../../redux/slice/authSlice";
@@ -16,6 +14,11 @@ import {
   CALCULATE_TOTAL_QUANTITY,
   selectCartTotalQuantity,
 } from "../../redux/slice/cartSlice";
+import {
+  isAuthConfigured,
+  signOutUser,
+  subscribeToAuthUser,
+} from "../../auth/client";
 
 const logo =(
   <div className={styles.logo}>
@@ -57,36 +60,34 @@ const Header = () => {
 
 //MONITOR CURRENTLY SIGNED USER
 useEffect (() => {
-  if (!isFirebaseEnabled || !auth) {
+  let unsubscribe = () => undefined;
+
+  if (!isAuthConfigured()) {
     setdisplayName("");
     dispatch(REMOVE_ACTIVE_USER());
-    return;
+    return () => undefined;
   }
 
-  onAuthStateChanged(auth, (user) => {
+  subscribeToAuthUser((user) => {
     if (user) {
-      // console.log(user);
-      setdisplayName(user.displayName) 
-      if (user.displayName == null) {
-        const u1 = user.email.substring(0, user.email.indexOf("@"));
-        const uName = u1.charAt(0).toUpperCase() + u1.slice(1)
-        setdisplayName(uName);
-       } else {
       setdisplayName(user.displayName);
-       }
 
       dispatch(SET_ACTIVE_USER({
         email: user.email,
-        userName: user.displayName ? user.displayName : displayName,
-        userID: user.uid,
-        isAdmin: isAdminUser(user.email, user.uid),
+        userName: user.displayName,
+        userID: user.id,
+        isAdmin: isAdminUser(user.email, user.id),
       }))
     } else {
      setdisplayName("");
      dispatch(REMOVE_ACTIVE_USER());
     }
+  }).then((cleanup) => {
+    unsubscribe = cleanup;
   });
-},[dispatch, displayName]);
+
+  return () => unsubscribe();
+},[dispatch]);
 
 const toggleMenu = () => {
   setShowMenu(!showMenu)
@@ -96,18 +97,18 @@ const hideMenu = () => {
   setShowMenu(false)
 };
 const logoutUser = () => {
-  if (!isFirebaseEnabled || !auth) {
+  if (!isAuthConfigured()) {
     dispatch(REMOVE_ACTIVE_USER());
     navigate("/");
     return;
   }
 
-  signOut(auth).then(() => {
+  signOutUser().then(() => {
     navigate("/")
     toast.success("Logout successfullly.")
   })
   .catch((error) => {
-    toast.error("error.message.")
+    toast.error(error?.message || "Logout failed.")
   });
 };
 

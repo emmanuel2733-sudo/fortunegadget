@@ -3,7 +3,7 @@ import React from 'react'
 import {useState} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { auth, firebaseInitError, storage } from '../../../firebase/config'
+import { firebaseInitError, storage } from '../../../firebase/config'
 import Card from '../../card/Card'
 import styles from "./AddProduct.module.scss"
 import Loader from "../../loader/Loader";
@@ -12,6 +12,7 @@ import { selectProducts} from "../../../redux/slice/productSlice";
 import { normalizeCategory, normalizeProductCategory } from '../../../utils/category';
 import { compressImageFile } from '../../../utils/imageCompression';
 import { getStorageErrorMessage, validateImageFile } from '../../../utils/storage';
+import { getCurrentAccessToken } from '../../../auth/client';
 
 
 
@@ -45,11 +46,11 @@ const withTimeout = (promise, timeoutMs, message) =>
   ]);
 
 const saveProductThroughBackend = async (endpoint, method, product) => {
-  if (!auth?.currentUser) {
+  const idToken = await getCurrentAccessToken();
+
+  if (!idToken) {
     throw new Error("You must be signed in before saving a product.");
   }
-
-  const idToken = await auth.currentUser.getIdToken();
   const response = await fetch(`${apiBaseUrl}${endpoint}`, {
     method,
     headers: {

@@ -3,10 +3,9 @@ import Card from '../../components/card/Card';
 import resetImg from "../../assests/forgot.png"
 import { Link } from 'react-router-dom';
 import styles from "./auth.module.scss";
-import { auth, firebaseInitError, isFirebaseEnabled } from '../../firebase/config';
-import { sendPasswordResetEmail } from 'firebase/auth';
 import { toast } from 'react-toastify';
 import Loader from '../../components/loader/Loader';
+import { getAuthInitError, isAuthConfigured, requestPasswordReset } from '../../auth/client';
 
 const Reset = () => { 
   const [email, setEmail] = useState("");
@@ -15,21 +14,21 @@ const Reset = () => {
 const resetPasword = (e) => {
   e.preventDefault()
 
-  if (!isFirebaseEnabled || !auth) {
-    toast.error(`Password reset unavailable: ${firebaseInitError || "Firebase is not configured"}`);
+  if (!isAuthConfigured()) {
+    toast.error(`Password reset unavailable: ${getAuthInitError() || "Auth provider is not configured"}`);
     return;
   }
 
 setIsLoading(true);
 
-  sendPasswordResetEmail(auth, email)
+  requestPasswordReset(email)
   .then(() => {
     setIsLoading(false);
     toast.success("check your email for a reset link")
   })
   .catch((error) => {
     setIsLoading(false);
-    toast.error("error.message")
+    toast.error(error?.message || "Password reset failed.")
   });
 
 

@@ -4,10 +4,13 @@ import registerImg from "../../assests/register.png";
 import Card from '../../components/card/Card'; 
 import {Link, useNavigate,} from "react-router-dom";
 import{useState} from "react";
-import{createUserWithEmailAndPassword} from "firebase/auth"
-import { auth, firebaseInitError, isFirebaseEnabled } from '../../firebase/config';
 import Loader from '../../components/loader/Loader';
 import { toast } from 'react-toastify';
+import {
+  getAuthInitError,
+  isAuthConfigured,
+  signUpWithPassword,
+} from '../../auth/client';
 
 const Register = () => {
 
@@ -21,23 +24,26 @@ const Register = () => {
   const registerUser = (e) => {
     e.preventDefault();
 
-    if (!isFirebaseEnabled || !auth) {
-      toast.error(`Registration unavailable: ${firebaseInitError || "Firebase is not configured"}`);
+    if (!isAuthConfigured()) {
+      toast.error(`Registration unavailable: ${getAuthInitError() || "Auth provider is not configured"}`);
       return;
     }
 
     if (password !==cPassword) {
       toast.error("Passwords does not match.")
+      return;
     }
     setIsLoading(true);
 
 
-    createUserWithEmailAndPassword(auth, email, password)
-  .then((userCredential) => {
-    const user = userCredential.user;
-    console.log(user)
+    signUpWithPassword(email, password)
+  .then(({ needsEmailConfirmation }) => {
     setIsLoading(false)
-    toast.success("Registration successful...")
+    toast.success(
+      needsEmailConfirmation
+        ? "Registration successful. Check your email to confirm your account."
+        : "Registration successful..."
+    )
     navigate("/Login")
   })
   .catch((error) => {

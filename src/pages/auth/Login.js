@@ -5,12 +5,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import {FaGoogle} from "react-icons/fa"
 import Card from '../../components/card/Card';
 import { useState } from 'react';
-import {GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
-import { auth, firebaseInitError, isFirebaseEnabled } from '../../firebase/config';
 import {toast} from "react-toastify"
 import Loader from '../../components/loader/Loader';
 import { useSelector } from 'react-redux';
 import { selectPreviousURL } from '../../redux/slice/cartSlice';
+import {
+  getAuthInitError,
+  isAuthConfigured,
+  signInWithGoogleProvider,
+  signInWithPassword,
+} from '../../auth/client';
 
 
 
@@ -34,16 +38,15 @@ export const Login = () => {
   const loginUser = (e) => {
     e.preventDefault();
 
-    if (!isFirebaseEnabled || !auth) {
-      toast.error(`Login unavailable: ${firebaseInitError || "Firebase is not configured"}`);
+    if (!isAuthConfigured()) {
+      toast.error(`Login unavailable: ${getAuthInitError() || "Auth provider is not configured"}`);
       return;
     }
 
     setIsLoading(true);
 
-    signInWithEmailAndPassword(auth, loginId.trim(), password)
-    .then((userCredential) => { 
-      const user = userCredential.user;
+    signInWithPassword(loginId.trim(), password)
+    .then(() => { 
       setIsLoading(false);
       toast.success("Login Successful...")
      redirectUser()
@@ -55,22 +58,24 @@ export const Login = () => {
     });
   };
 // login with Google
-const provider = new GoogleAuthProvider();
 const signInWithGoogle = () =>  {
-  if (!isFirebaseEnabled || !auth) {
-    toast.error(`Google login unavailable: ${firebaseInitError || "Firebase is not configured"}`);
+  if (!isAuthConfigured()) {
+    toast.error(`Google login unavailable: ${getAuthInitError() || "Auth provider is not configured"}`);
     return;
   }
 
-  signInWithPopup(auth, provider)
+  signInWithGoogleProvider()
   .then((result) => {
-const user = result.user;
+if (result?.redirecting) {
+  return;
+}
+
 toast.success("Login Successful")
 redirectUser()
 
 
 }).catch((error) => {
-    toast.error("error.message")
+    toast.error(error?.message || "Google login failed.")
    
   });
   };
