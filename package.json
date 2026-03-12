@@ -6,6 +6,7 @@
     "@emailjs/browser": "^4.4.1",
     "@paystack/inline-js": "^2.22.8",
     "@reduxjs/toolkit": "^2.2.8",
+    "@supabase/supabase-js": "^2.56.1",
     "chart.js": "^4.4.4",
     "firebase": "^12.10.0",
     "notiflix": "^3.2.6",
