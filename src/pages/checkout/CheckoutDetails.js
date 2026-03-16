@@ -5,9 +5,11 @@ import { useNavigate } from "react-router-dom";
 import Card from "../../components/card/Card";
 import CheckoutSummary from "../../components/checkoutSummary/CheckoutSummary.js";
 import { SAVE_BILLING_ADDRESS, SAVE_SHIPPING_ADDRESS} from "../../redux/slice/checkoutSlice";
-import { selectEmail } from "../../redux/slice/authSlice";
+import { selectEmail, selectIsAuthReady } from "../../redux/slice/authSlice";
 import { isValidEmail, normalizeEmail } from "../../utils/email";
 import { toast } from "react-toastify";
+import Loader from "../../components/loader/Loader";
+import { isAuthConfigured } from "../../auth/client";
 
 import styles from "./CheckoutDetails.module.scss";
 
@@ -26,6 +28,7 @@ const initialAddressState = {
 
 const CheckoutDetails = () => {
   const accountEmail = useSelector(selectEmail);
+  const isAuthReady = useSelector(selectIsAuthReady);
   const normalizedAccountEmail = normalizeEmail(accountEmail);
   const [shippingAddress, setShippingAddress] = useState({
     ...initialAddressState,
@@ -58,6 +61,11 @@ const CheckoutDetails = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
 
+    if (isAuthConfigured() && !isAuthReady) {
+      toast.info("Checking your session. Try again in a moment.");
+      return;
+    }
+
     if (!isValidEmail(normalizedAccountEmail)) {
       toast.error("Sign in with a valid account email before checkout.");
       navigate("/login");
@@ -77,6 +85,10 @@ const CheckoutDetails = () => {
     dispatch(SAVE_BILLING_ADDRESS(nextBillingAddress));
     navigate("/checkout");
   };
+
+  if (isAuthConfigured() && !isAuthReady) {
+    return <Loader />;
+  }
 
   return (
     <section>

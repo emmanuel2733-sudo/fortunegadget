@@ -7,8 +7,9 @@ import styles from "./Cart.module.scss";
 import {FaTrashAlt} from "react-icons/fa"
 import { Link, useNavigate } from 'react-router-dom';
 import Card from '../../components/card/Card';
-import { selectIsLoggedIn } from '../../redux/slice/authSlice';
-import { isFirebaseEnabled } from '../../firebase/config';
+import { selectIsAuthReady, selectIsLoggedIn } from '../../redux/slice/authSlice';
+import { isAuthConfigured } from '../../auth/client';
+import { toast } from 'react-toastify';
 
 
 
@@ -20,6 +21,7 @@ import { isFirebaseEnabled } from '../../firebase/config';
     const cartTotalQuantity = useSelector(selectCartTotalQuantity);
     const dispatch = useDispatch()
     const isLoggedIn = useSelector(selectIsLoggedIn)
+    const isAuthReady = useSelector(selectIsAuthReady)
 
     const navigate = useNavigate()
 
@@ -49,7 +51,12 @@ import { isFirebaseEnabled } from '../../firebase/config';
 
    const url = window.location.href;
    const checkout =() => {
-    if (isLoggedIn || !isFirebaseEnabled) {
+    if (isAuthConfigured() && !isAuthReady) {
+      toast.info("Checking your session. Try checkout again in a moment.");
+      return;
+    }
+
+    if (isLoggedIn || !isAuthConfigured()) {
       navigate("/checkout-details")
     } else {
       dispatch(SAVE_URL(url))

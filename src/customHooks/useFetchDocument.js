@@ -1,34 +1,32 @@
-import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { db } from "../firebase/config";
+import { getSupabaseProductById } from "../data/products";
 
 const useFetchDocument = (collectionName, documentID) => {
   const [document, setDocument] = useState(null);
 
-  const getDocument = async () => {
-    if (!db) {
-      setDocument(null);
-      return;
-    }
-
-    const docRef = doc(db, collectionName, documentID);
-    const docSnap = await getDoc(docRef);
-
-    if (docSnap.exists()) {
-      // console.log("Document data:", docSnap.data());
-      const obj = {
-        id: documentID,
-        ...docSnap.data(),
-      };
-      setDocument(obj);
-    } else {
-      toast.error("Document not found");
-    }
-  };
-
   useEffect(() => {
-    getDocument().catch((error) => toast.error(error.message));
+    if (collectionName !== "products") {
+      setDocument(null);
+      toast.error(`Unsupported document collection: ${collectionName}`);
+      return undefined;
+    }
+
+    getSupabaseProductById(documentID)
+      .then((product) => {
+        if (product) {
+          setDocument(product);
+          return;
+        }
+
+        setDocument(null);
+        toast.error("Document not found");
+      })
+      .catch((error) => {
+        toast.error(error.message);
+      });
+
+    return undefined;
   }, [collectionName, documentID]);
 
   return { document };

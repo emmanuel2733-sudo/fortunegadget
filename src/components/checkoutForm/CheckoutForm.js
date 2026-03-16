@@ -15,10 +15,9 @@ import {
   selectBillingAddress,
   selectShippingAddress,
 } from "../../redux/slice/checkoutSlice";
-import { addDoc, collection, Timestamp } from "firebase/firestore";
-import { db, isFirebaseEnabled } from "../../firebase/config";
 import { useNavigate } from "react-router-dom";
 import { isValidEmail, pickValidEmail } from "../../utils/email";
+import { createOrder } from "../../data/orders";
 
 const CheckoutForm = ({ paymentConfig }) => {
   const [message, setMessage] = useState(null);
@@ -68,23 +67,15 @@ const CheckoutForm = ({ paymentConfig }) => {
       paymentGateway: "paystack",
       paymentReference: paymentDetails.reference,
       paymentStatus: paymentDetails.status,
-      createdAt: Timestamp.now().toDate(),
+      createdAt: new Date(),
     };
 
-    if (!isFirebaseEnabled || !db) {
-      dispatch(CLEAR_CART());
-      toast.info("Payment completed. Order history is unavailable right now.");
-      navigate("/checkout-success");
-      saveInFlightRef.current = false;
-      return;
-    }
-
     try {
-      await addDoc(collection(db, "orders"), orderConfig);
+      await createOrder(orderConfig);
       dispatch(CLEAR_CART());
       toast.success("Order saved");
     } catch (error) {
-      toast.warning("Payment completed, but order could not be saved.");
+      toast.warning(error?.message || "Payment completed, but order could not be saved.");
     }
     navigate("/checkout-success");
     saveInFlightRef.current = false;

@@ -2,18 +2,16 @@ import React from 'react'
 import styles from "./Orders.module.scss"
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import useFetchCollection from "../../../customHooks/useFetchCollection";
-import { deleteDoc, doc } from "firebase/firestore";
 
 import {selectOrderHistory,STORE_ORDERS,} from "../../../redux/slice/orderSlice";
 //import { selectUserID } from '../../../redux/slice/authSlice';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Loader from '../../loader/Loader';
 import { toast } from 'react-toastify';
-import { db } from '../../../firebase/config';
+import { deleteOrder as deleteOrderById, listOrders } from '../../../data/orders';
 
 const Orders = () => {
-  const { data, isLoading } = useFetchCollection("orders");
+  const [isLoading, setIsLoading] = useState(false);
   const orders = useSelector(selectOrderHistory);
   //const userID = useSelector(selectUserID);
 
@@ -21,8 +19,18 @@ const Orders = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    dispatch(STORE_ORDERS(data));
-  }, [dispatch, data]);
+    setIsLoading(true);
+    listOrders({ admin: true })
+      .then((items) => {
+        dispatch(STORE_ORDERS(items));
+      })
+      .catch((error) => {
+        toast.error(error?.message || "Failed to load orders.");
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [dispatch]);
 
   const handleClick = (id) => {
     navigate(`/admin/order-details/${id}`);
@@ -31,18 +39,15 @@ const Orders = () => {
   const deleteOrder = async (event, id) => {
     event.stopPropagation();
 
-    if (!db) {
-      toast.error("Firebase must be enabled to delete orders.");
-      return;
-    }
-
     const confirmed = window.confirm("Delete this order?");
     if (!confirmed) {
       return;
     }
 
     try {
-      await deleteDoc(doc(db, "orders", id));
+      await deleteOrderById(id);
+      const refreshedOrders = await listOrders({ admin: true });
+      dispatch(STORE_ORDERS(refreshedOrders));
       toast.success("Order deleted successfully.");
     } catch (error) {
       toast.error(error.message);

@@ -1,9 +1,7 @@
-import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage'
 import React from 'react'
 import {useState} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { firebaseInitError, storage } from '../../../firebase/config'
 import Card from '../../card/Card'
 import styles from "./AddProduct.module.scss"
 import Loader from "../../loader/Loader";
@@ -12,7 +10,15 @@ import { selectProducts} from "../../../redux/slice/productSlice";
 import { normalizeCategory, normalizeProductCategory } from '../../../utils/category';
 import { compressImageFile } from '../../../utils/imageCompression';
 import { getStorageErrorMessage, validateImageFile } from '../../../utils/storage';
-import { getCurrentAccessToken } from '../../../auth/client';
+import {
+  createAdminProduct,
+  updateAdminProduct,
+} from '../../../data/adminProducts';
+import {
+  getProductProviderInitError,
+  removeProductImage,
+  uploadProductImage,
+} from '../../../data/products';
 
 
 
@@ -26,6 +32,7 @@ const categories =[
 const intialState = {
   name: "",
   imageURL: "",
+  imagePath: "",
   price: null,
   category: "",
   brand: "",
@@ -33,10 +40,6 @@ const intialState = {
 }
 
 const SAVE_TIMEOUT_MS = 20000;
-const apiBaseUrl = (
-  import.meta.env.REACT_APP_API_BASE_URL || "http://localhost:4242"
-).replace(/\/+$/, "");
-
 const withTimeout = (promise, timeoutMs, message) =>
   Promise.race([
     promise,
@@ -44,32 +47,6 @@ const withTimeout = (promise, timeoutMs, message) =>
       setTimeout(() => reject(new Error(message)), timeoutMs);
     }),
   ]);
-
-const saveProductThroughBackend = async (endpoint, method, product) => {
-  const idToken = await getCurrentAccessToken();
-
-  if (!idToken) {
-    throw new Error("You must be signed in before saving a product.");
-  }
-  const response = await fetch(`${apiBaseUrl}${endpoint}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(product),
-  });
-
-  const json = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(
-      json?.error || "Failed to save the product through the backend."
-    );
-  }
-
-  return json;
-};
 
 const AddProduct = () => {
   const {id} = useParams()
@@ -109,8 +86,10 @@ const AddProduct = () => {
   };
 
   const handleImageChange = async (e) => {
-    if (!storage) {
-      toast.error(firebaseInitError || "Firebase Storage is not available.");
+    const productProviderError = getProductProviderInitError();
+
+    if (productProviderError) {
+      toast.error(productProviderError);
       e.target.value = "";
       return;
     }
@@ -144,35 +123,22 @@ const AddProduct = () => {
     }
 
     setUploadProgress(0);
-    const storageRef = ref(storage, `fortune-gadgets/${Date.now()}${file.name}`);
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    try {
+      const uploadResult = await uploadProductImage(file);
 
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => {
-        const progress =
-          (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
-      },
-      (error) => {
-        toast.error(getStorageErrorMessage(error));
-        setUploadProgress(0);
-        setIsPreparingImage(false);
-      },
-      () => {
-        getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-          setProduct((currentProduct) => ({
-            ...currentProduct,
-            imageURL: downloadURL.trim(),
-          }));
-          setIsPreparingImage(false);
-          toast.success("Image uploaded successfully.");
-        }).catch((error) => {
-          toast.error(getStorageErrorMessage(error));
-          setIsPreparingImage(false);
-        });
-      }
-    );
+      setProduct((currentProduct) => ({
+        ...currentProduct,
+        imagePath: uploadResult.imagePath,
+        imageURL: uploadResult.imageURL,
+      }));
+      setIsPreparingImage(false);
+      setUploadProgress(100);
+      toast.success("Image uploaded successfully.");
+    } catch (error) {
+      toast.error(getStorageErrorMessage(error));
+      setUploadProgress(0);
+      setIsPreparingImage(false);
+    }
   };
   
     const addProduct = async (e) => {
@@ -192,9 +158,10 @@ const AddProduct = () => {
 
       try {
         await withTimeout(
-          saveProductThroughBackend("/admin/products", "POST", {
+          createAdminProduct({
           name: product.name,
           imageURL: product.imageURL.trim(),
+          imagePath: product.imagePath,
           price: Number(product.price),
           category: normalizeCategory(product.category),
           brand: product.brand,
@@ -202,7 +169,7 @@ const AddProduct = () => {
           createdAt: new Date(),
           }),
           SAVE_TIMEOUT_MS,
-          "Saving the product took too long. Check the Railway backend, Firebase Admin credentials, and network connection."
+          "Saving the product took too long. Check the Railway backend, Supabase configuration, and network connection."
         );
         setUploadProgress(0)
         setProduct({ ...intialState})
@@ -235,9 +202,10 @@ const editProduct = async (e) => {
 
   try {
     await withTimeout(
-      saveProductThroughBackend(`/admin/products/${id}`, "PUT", {
+      updateAdminProduct(id, {
       name: product.name,
       imageURL: product.imageURL.trim(),
+      imagePath: product.imagePath,
       price: Number(product.price),
       category: normalizeCategory(product.category),
       brand: product.brand,
@@ -246,12 +214,11 @@ const editProduct = async (e) => {
       editedAt: new Date(),
       }),
       SAVE_TIMEOUT_MS,
-      "Updating the product took too long. Check the Railway backend, Firebase Admin credentials, and network connection."
+      "Updating the product took too long. Check the Railway backend, Supabase configuration, and network connection."
     );
 
     if (product.imageURL !== productEdit.imageURL) {
-      const storageRef = ref(storage, productEdit.imageURL);
-      await deleteObject(storageRef).catch(() => undefined)
+      await removeProductImage(productEdit.imagePath || productEdit.imageURL).catch(() => undefined)
     }
 
     navigate("/admin/all-product", {

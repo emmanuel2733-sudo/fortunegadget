@@ -1,18 +1,23 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import useFetchDocument from "../../customHooks/useFetchDocument";
 import spinnerImg from "../../assests/spinner.jpg";
 import styles from "./OrderDetails.module.scss";
 import { fallbackToProductImage, getProductImage } from "../../utils/image";
+import { getOrderById } from "../../data/orders";
 
 const OrderDetails = () => {
   const [order, setOrder] = useState(null);
   const { id } = useParams();
-  const { document } = useFetchDocument("orders", id);
 
   useEffect(() => {
-    setOrder(document);
-  }, [document]);
+    getOrderById(id)
+      .then((nextOrder) => {
+        setOrder(nextOrder);
+      })
+      .catch(() => {
+        setOrder(null);
+      });
+  }, [id]);
 
   return (
     <section>

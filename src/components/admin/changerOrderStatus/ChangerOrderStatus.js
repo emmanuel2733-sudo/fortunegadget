@@ -1,35 +1,21 @@
-import { collection, doc, setDoc, Timestamp } from "firebase/firestore";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { db } from "../../../firebase/config";
 import Card from "../../card/Card";
 import Loader from "../../loader/Loader";
 import styles from "./ChangerOrderStatus.module.scss";
+import { updateOrderStatus } from "../../../data/orders";
 
 const ChangeOrderStatus = ({ order, id }) => {
   const [status, setStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const editOrder = (e, id) => {
+  const editOrder = async (e, id) => {
     e.preventDefault();
     setIsLoading(true);
-
-    const orderConfig = {
-      userID: order.userID,
-      userEmail: order.userEmail,
-      orderDate: order.orderDate,
-      orderTime: order.orderTime,
-      orderAmount: order.orderAmount,
-      orderStatus: status,
-      cartItems: order.cartItems,
-      shippingAddress: order.shippingAddress,
-      createdAt: order.createdAt,
-      editedAt: Timestamp.now().toDate(),
-    };
     try {
-      setDoc(doc (db, "orders", id), orderConfig);
+      await updateOrderStatus(id, status);
 
       setIsLoading(false);
       toast.success("Order status changes successfully");

@@ -1,28 +1,25 @@
-//import { doc, getDoc } from 'firebase/firestore'
 import React, {useEffect, useState} from 'react'
 import { useParams, Link } from 'react-router-dom'
-//import { db } from '../../../firebase/config'
 import styles from "./ProductDetails.module.scss"
 import spinnerImg from "../../../assests/spinner.jpg"
-//import {toast} from "react-toastify"
 import { useDispatch, useSelector } from 'react-redux';
 import { ADD_TO_CART, CALCULATE_TOTAL_QUANTITY, DECREASE_CART, selectCartItems } from '../../../redux/slice/cartSlice'
 import useFetchDocument from '../../../customHooks/useFetchDocument'
-import useFetchCollection from "../../../customHooks/useFetchCollection"
 import Card from '../../card/Card';
 import StarsRating from 'react-star-rate';
 import { fallbackToProductImage, getProductImage } from "../../../utils/image";
+import { listReviews } from "../../../data/reviews";
 
 
 
 const ProductDetails = () => {
 const {id} = useParams()
 const [product, setProduct] = useState(null)
+const [reviews, setReviews] = useState([]);
 const dispatch = useDispatch()
 const cartItems = useSelector(selectCartItems);
 const {document} = useFetchDocument("products", id)
-const {data} = useFetchCollection("reviews")
-const filteredReviews = data.filter((review) => review.productID === id)
+const filteredReviews = reviews.filter((review) => review.productID === id)
 
 const cart = cartItems.find((cart) => cart.id === id);
 
@@ -34,6 +31,16 @@ const isCardAdded = cartItems.findIndex((cart) =>{
     setProduct(document);
   }, [document]);
 
+ useEffect(() => {
+    listReviews({ productId: id })
+      .then((items) => {
+        setReviews(items);
+      })
+      .catch(() => {
+        setReviews([]);
+      });
+  }, [id]);
+
   const addToCart = (product) => {
     dispatch(ADD_TO_CART(product))
     dispatch(CALCULATE_TOTAL_QUANTITY())
@@ -43,26 +50,7 @@ const isCardAdded = cartItems.findIndex((cart) =>{
     dispatch(DECREASE_CART(product))
     dispatch(CALCULATE_TOTAL_QUANTITY())
   };
-
-
-
 //   const getProduct = async () => {
-//     const docRef = doc(db, "products", id);
-//     const docSnap = await getDoc(docRef);
-
-// if (docSnap.exists()) {
-//  //   console.log("Document data:", docSnap.data());
-//  const obj = {
-//   id: id,
-//   ...docSnap.data()
-//  }
-//  setProduct(obj);
-// } else {
-//   toast.error("Not found")
-// }
-//   };
-
-
   return (
     <section>
       <div className={`container ${styles.product}`}>

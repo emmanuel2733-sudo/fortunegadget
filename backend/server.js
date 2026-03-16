@@ -3,27 +3,19 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const https = require("https");
 const path = require("path");
-const admin = require("firebase-admin");
 
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 
 const app = express();
 const PORT = Number(process.env.PORT || 4242);
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-const AUTH_PROVIDER = (
-  process.env.AUTH_PROVIDER ||
-  process.env.BACKEND_PROVIDER ||
-  "firebase"
-)
-  .trim()
-  .toLowerCase();
 const PAYSTACK_API_HOST = "api.paystack.co";
 const paystackSecretKey = (process.env.PAYSTACK_SECRET_KEY || "").trim();
-const firebaseProjectId = (process.env.FIREBASE_PROJECT_ID || "").trim();
-const firebaseClientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
-const firebasePrivateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
 const supabaseUrl = normalizeUrl(process.env.SUPABASE_URL || "");
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+const supabaseProductsTable = (process.env.SUPABASE_PRODUCTS_TABLE || "products").trim();
+const supabaseOrdersTable = (process.env.SUPABASE_ORDERS_TABLE || "orders").trim();
+const supabaseReviewsTable = (process.env.SUPABASE_REVIEWS_TABLE || "reviews").trim();
 const adminUids = new Set(
   (process.env.ADMIN_UIDS || "")
     .split(",")
@@ -41,34 +33,9 @@ function hasUsablePaystackSecret(key) {
   return Boolean(key) && key.startsWith("sk_") && !key.includes("your_secret_key");
 }
 
-function hasFirebaseAdminConfig() {
-  return Boolean(firebaseProjectId && firebaseClientEmail && firebasePrivateKey);
-}
-
 function hasSupabaseAdminConfig() {
   return Boolean(supabaseUrl && supabaseServiceRoleKey);
 }
-
-function getFirebaseAdminApp() {
-  if (!hasFirebaseAdminConfig()) {
-    return null;
-  }
-
-  if (admin.apps.length) {
-    return admin.app();
-  }
-
-  return admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: firebaseProjectId,
-      clientEmail: firebaseClientEmail,
-      privateKey: firebasePrivateKey,
-    }),
-  });
-}
-
-const firebaseAdminApp = getFirebaseAdminApp();
-const adminDb = firebaseAdminApp ? admin.firestore(firebaseAdminApp) : null;
 
 async function getSupabaseUserFromToken(token) {
   if (!hasSupabaseAdminConfig()) {
@@ -91,6 +58,39 @@ async function getSupabaseUserFromToken(token) {
   }
 
   return payload;
+}
+
+async function supabaseRestRequest(method, pathname, payload) {
+  if (!hasSupabaseAdminConfig()) {
+    throw new Error(
+      "Supabase Admin is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to backend variables."
+    );
+  }
+
+  const body = payload ? JSON.stringify(payload) : undefined;
+  const response = await fetch(`${supabaseUrl}${pathname}`, {
+    method,
+    headers: {
+      apikey: supabaseServiceRoleKey,
+      Authorization: `Bearer ${supabaseServiceRoleKey}`,
+      Accept: "application/json",
+      ...(body ? { "Content-Type": "application/json", Prefer: "return=representation" } : {}),
+    },
+    ...(body ? { body } : {}),
+  });
+
+  const json = await response.json().catch(() => []);
+
+  if (!response.ok) {
+    throw new Error(
+      json?.message ||
+        json?.error_description ||
+        json?.error ||
+        "Supabase request failed."
+    );
+  }
+
+  return json;
 }
 
 app.use(
@@ -116,25 +116,40 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-function toFirestoreDate(value) {
+function toIsoString(value) {
   if (!value) {
-    return new Date();
+    return new Date().toISOString();
   }
 
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
 function normalizeProductPayload(payload = {}) {
   return {
     name: String(payload.name || "").trim(),
     imageURL: String(payload.imageURL || "").trim(),
+    imagePath: String(payload.imagePath || "").trim(),
     price: Number(payload.price),
     category: String(payload.category || "").trim(),
     brand: String(payload.brand || "").trim(),
     desc: String(payload.desc || "").trim(),
-    createdAt: toFirestoreDate(payload.createdAt),
-    ...(payload.editedAt ? { editedAt: toFirestoreDate(payload.editedAt) } : {}),
+    createdAt: payload.createdAt || null,
+    ...(payload.editedAt ? { editedAt: payload.editedAt } : {}),
+  };
+}
+
+function toSupabaseProductRecord(product) {
+  return {
+    name: product.name,
+    image_url: product.imageURL,
+    image_path: product.imagePath,
+    price: product.price,
+    category: product.category,
+    brand: product.brand,
+    desc: product.desc,
+    created_at: toIsoString(product.createdAt),
+    edited_at: product.editedAt ? toIsoString(product.editedAt) : null,
   };
 }
 
@@ -166,6 +181,33 @@ function validateProductPayload(product) {
   return "";
 }
 
+async function getAuthenticatedUserFromToken(token) {
+  const user = await getSupabaseUserFromToken(token);
+  return {
+    email: normalizeEmail(user.email),
+    id: user.id,
+    rawUser: user,
+  };
+}
+
+async function requireAuthenticatedUser(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || "";
+
+    if (!authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing authorization token." });
+    }
+
+    const token = authHeader.slice("Bearer ".length).trim();
+    req.user = await getAuthenticatedUserFromToken(token);
+    return next();
+  } catch (error) {
+    return res.status(401).json({
+      error: error?.message || "Unable to verify credentials.",
+    });
+  }
+}
+
 async function requireAdminUser(req, res, next) {
   try {
     const authHeader = req.headers.authorization || "";
@@ -175,32 +217,13 @@ async function requireAdminUser(req, res, next) {
     }
 
     const token = authHeader.slice("Bearer ".length).trim();
+    const user = await getAuthenticatedUserFromToken(token);
 
-    if (AUTH_PROVIDER === "supabase") {
-      const user = await getSupabaseUserFromToken(token);
-
-      if (adminUids.size > 0 && !adminUids.has(user.id)) {
-        return res.status(403).json({ error: "You do not have admin access." });
-      }
-
-      req.user = user;
-      return next();
-    }
-
-    if (!firebaseAdminApp || !adminDb) {
-      return res.status(503).json({
-        error:
-          "Firebase Admin is not configured. Add FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and ADMIN_UIDS to backend variables.",
-      });
-    }
-
-    const decodedToken = await admin.auth(firebaseAdminApp).verifyIdToken(token);
-
-    if (adminUids.size > 0 && !adminUids.has(decodedToken.uid)) {
+    if (adminUids.size > 0 && !adminUids.has(user.id)) {
       return res.status(403).json({ error: "You do not have admin access." });
     }
 
-    req.user = decodedToken;
+    req.user = user;
     return next();
   } catch (error) {
     return res.status(401).json({
@@ -241,6 +264,124 @@ function normalizeEmail(value) {
 function isValidEmail(value) {
   const email = normalizeEmail(value);
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function normalizeOrderPayload(payload = {}, authenticatedUser = null) {
+  const userId = authenticatedUser?.id || payload.userID || payload.userId || "";
+  const userEmail = authenticatedUser?.email || payload.userEmail || payload.user_email || "";
+
+  return {
+    userID: String(userId).trim(),
+    userEmail: normalizeEmail(userEmail),
+    orderDate: String(payload.orderDate || "").trim(),
+    orderTime: String(payload.orderTime || "").trim(),
+    orderAmount: Number(payload.orderAmount),
+    orderStatus: String(payload.orderStatus || "").trim(),
+    cartItems: Array.isArray(payload.cartItems) ? payload.cartItems : [],
+    shippingAddress:
+      payload.shippingAddress && typeof payload.shippingAddress === "object"
+        ? payload.shippingAddress
+        : {},
+    paymentGateway: String(payload.paymentGateway || "").trim(),
+    paymentReference: String(payload.paymentReference || "").trim(),
+    paymentStatus: String(payload.paymentStatus || "").trim(),
+    createdAt: payload.createdAt || null,
+    editedAt: payload.editedAt || null,
+  };
+}
+
+function validateOrderPayload(order) {
+  if (!order.userID) {
+    return "A signed-in user is required to save an order.";
+  }
+
+  if (!isValidEmail(order.userEmail)) {
+    return "A valid order email is required.";
+  }
+
+  if (!order.orderDate || !order.orderTime) {
+    return "Order date and time are required.";
+  }
+
+  if (!Number.isFinite(order.orderAmount) || order.orderAmount <= 0) {
+    return "Order amount must be greater than zero.";
+  }
+
+  if (!order.orderStatus) {
+    return "Order status is required.";
+  }
+
+  if (!Array.isArray(order.cartItems) || order.cartItems.length === 0) {
+    return "Order items are required.";
+  }
+
+  return "";
+}
+
+function toSupabaseOrderRecord(order) {
+  return {
+    user_id: order.userID,
+    user_email: order.userEmail,
+    order_date: order.orderDate,
+    order_time: order.orderTime,
+    order_amount: order.orderAmount,
+    order_status: order.orderStatus,
+    cart_items: order.cartItems,
+    shipping_address: order.shippingAddress,
+    payment_gateway: order.paymentGateway,
+    payment_reference: order.paymentReference,
+    payment_status: order.paymentStatus,
+    created_at: toIsoString(order.createdAt),
+    edited_at: order.editedAt ? toIsoString(order.editedAt) : null,
+  };
+}
+
+function normalizeReviewPayload(payload = {}, authenticatedUser = null) {
+  return {
+    userID: String(authenticatedUser?.id || payload.userID || "").trim(),
+    userName: String(payload.userName || "").trim(),
+    productID: String(payload.productID || "").trim(),
+    rate: Number(payload.rate),
+    review: String(payload.review || "").trim(),
+    reviewDate: String(payload.reviewDate || "").trim(),
+    createdAt: payload.createdAt || null,
+  };
+}
+
+function validateReviewPayload(review) {
+  if (!review.userID) {
+    return "A signed-in user is required to submit a review.";
+  }
+
+  if (!review.userName) {
+    return "Reviewer name is required.";
+  }
+
+  if (!review.productID) {
+    return "A product is required for the review.";
+  }
+
+  if (!Number.isFinite(review.rate) || review.rate <= 0) {
+    return "A review rating is required.";
+  }
+
+  if (!review.review) {
+    return "Review text is required.";
+  }
+
+  return "";
+}
+
+function toSupabaseReviewRecord(review) {
+  return {
+    user_id: review.userID,
+    user_name: review.userName,
+    product_id: review.productID,
+    rate: review.rate,
+    review: review.review,
+    review_date: review.reviewDate,
+    created_at: toIsoString(review.createdAt),
+  };
 }
 
 function paystackRequest(method, pathname, payload) {
@@ -425,6 +566,190 @@ app.post("/verify-payment", async (req, res) => {
   }
 });
 
+app.post("/orders", requireAuthenticatedUser, async (req, res) => {
+  try {
+    const order = normalizeOrderPayload(req.body, req.user);
+    const validationError = validateOrderPayload(order);
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const rows = await supabaseRestRequest(
+      "POST",
+      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?select=*`,
+      toSupabaseOrderRecord(order)
+    );
+    const createdOrder = Array.isArray(rows) ? rows[0] : rows;
+    return res.status(201).json(createdOrder);
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to create order.",
+    });
+  }
+});
+
+app.get("/orders", requireAuthenticatedUser, async (req, res) => {
+  try {
+    const query = new URLSearchParams({
+      select: "*",
+      order: "created_at.desc",
+    });
+
+    if (req.query.scope !== "all" || !adminUids.has(req.user.id)) {
+      query.set("user_id", `eq.${req.user.id}`);
+    }
+
+    const rows = await supabaseRestRequest(
+      "GET",
+      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`
+    );
+
+    return res.json(Array.isArray(rows) ? rows : []);
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to load orders.",
+    });
+  }
+});
+
+app.get("/orders/:id", requireAuthenticatedUser, async (req, res) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID is required." });
+    }
+
+    const query = new URLSearchParams({
+      select: "*",
+      id: `eq.${orderId}`,
+    });
+    const rows = await supabaseRestRequest(
+      "GET",
+      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`
+    );
+    const order = Array.isArray(rows) ? rows[0] : rows;
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    if (!adminUids.has(req.user.id) && order.user_id !== req.user.id) {
+      return res.status(403).json({ error: "You do not have access to this order." });
+    }
+
+    return res.json(order);
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to load the order.",
+    });
+  }
+});
+
+app.patch("/admin/orders/:id/status", requireAdminUser, async (req, res) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+    const status = String(req.body?.status || "").trim();
+
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID is required." });
+    }
+
+    if (!status) {
+      return res.status(400).json({ error: "Order status is required." });
+    }
+
+    const query = new URLSearchParams({
+      id: `eq.${orderId}`,
+      select: "*",
+    });
+    const rows = await supabaseRestRequest(
+      "PATCH",
+      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`,
+      {
+        order_status: status,
+        edited_at: new Date().toISOString(),
+      }
+    );
+    const updatedOrder = Array.isArray(rows) ? rows[0] : rows;
+    return res.json(updatedOrder);
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to update the order.",
+    });
+  }
+});
+
+app.delete("/admin/orders/:id", requireAdminUser, async (req, res) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID is required." });
+    }
+
+    const query = new URLSearchParams({
+      id: `eq.${orderId}`,
+    });
+    await supabaseRestRequest(
+      "DELETE",
+      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`
+    );
+    return res.json({ id: orderId, success: true });
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to delete the order.",
+    });
+  }
+});
+
+app.get("/reviews", async (req, res) => {
+  try {
+    const query = new URLSearchParams({
+      select: "*",
+      order: "created_at.desc",
+    });
+
+    if (req.query.productId) {
+      query.set("product_id", `eq.${String(req.query.productId).trim()}`);
+    }
+
+    const rows = await supabaseRestRequest(
+      "GET",
+      `/rest/v1/${encodeURIComponent(supabaseReviewsTable)}?${query.toString()}`
+    );
+    return res.json(Array.isArray(rows) ? rows : []);
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to load reviews.",
+    });
+  }
+});
+
+app.post("/reviews", requireAuthenticatedUser, async (req, res) => {
+  try {
+    const review = normalizeReviewPayload(req.body, req.user);
+    const validationError = validateReviewPayload(review);
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const rows = await supabaseRestRequest(
+      "POST",
+      `/rest/v1/${encodeURIComponent(supabaseReviewsTable)}?select=*`,
+      toSupabaseReviewRecord(review)
+    );
+    const createdReview = Array.isArray(rows) ? rows[0] : rows;
+    return res.status(201).json(createdReview);
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to create review.",
+    });
+  }
+});
+
 app.post("/admin/products", requireAdminUser, async (req, res) => {
   try {
     const product = normalizeProductPayload(req.body);
@@ -434,10 +759,15 @@ app.post("/admin/products", requireAdminUser, async (req, res) => {
       return res.status(400).json({ error: validationError });
     }
 
-    const docRef = await adminDb.collection("products").add(product);
+    const rows = await supabaseRestRequest(
+      "POST",
+      `/rest/v1/${encodeURIComponent(supabaseProductsTable)}?select=*`,
+      toSupabaseProductRecord(product)
+    );
+    const createdProduct = Array.isArray(rows) ? rows[0] : rows;
     return res.status(201).json({
-      id: docRef.id,
-      product,
+      id: createdProduct?.id,
+      product: createdProduct,
       success: true,
     });
   } catch (error) {
@@ -461,15 +791,50 @@ app.put("/admin/products/:id", requireAdminUser, async (req, res) => {
       return res.status(400).json({ error: validationError });
     }
 
-    await adminDb.collection("products").doc(productId).set(product, { merge: false });
+    const query = new URLSearchParams({
+      id: `eq.${productId}`,
+      select: "*",
+    });
+    const rows = await supabaseRestRequest(
+      "PATCH",
+      `/rest/v1/${encodeURIComponent(supabaseProductsTable)}?${query.toString()}`,
+      toSupabaseProductRecord(product)
+    );
+    const updatedProduct = Array.isArray(rows) ? rows[0] : rows;
     return res.json({
       id: productId,
-      product,
+      product: updatedProduct,
       success: true,
     });
   } catch (error) {
     return res.status(500).json({
       error: error?.message || "Failed to update product.",
+    });
+  }
+});
+
+app.delete("/admin/products/:id", requireAdminUser, async (req, res) => {
+  try {
+    const productId = String(req.params.id || "").trim();
+
+    if (!productId) {
+      return res.status(400).json({ error: "Product ID is required." });
+    }
+
+    const query = new URLSearchParams({
+      id: `eq.${productId}`,
+    });
+    await supabaseRestRequest(
+      "DELETE",
+      `/rest/v1/${encodeURIComponent(supabaseProductsTable)}?${query.toString()}`
+    );
+    return res.json({
+      id: productId,
+      success: true,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "Failed to delete product.",
     });
   }
 });

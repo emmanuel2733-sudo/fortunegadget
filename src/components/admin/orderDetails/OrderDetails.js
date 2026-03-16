@@ -1,20 +1,25 @@
 import React, { useEffect, useState } from "react";
-import useFetchDocument from "../../../customHooks/useFetchDocument";
 import styles from "./OrderDetails.module.scss";
 import spinnerImg from "../../../assests/spinner.jpg";
 import { Link, useParams } from "react-router-dom";
 import ChangerOrderStatus from "../changerOrderStatus/ChangerOrderStatus";
 import { fallbackToProductImage, getProductImage } from "../../../utils/image";
+import { getOrderById } from "../../../data/orders";
 
 
 const OrderDetails = () => {
   const [order, setOrder] = useState(null);
   const { id } = useParams();
-  const { document } = useFetchDocument("orders", id);
 
   useEffect(() => {
-    setOrder(document);
-  }, [document]);
+    getOrderById(id)
+      .then((nextOrder) => {
+        setOrder(nextOrder);
+      })
+      .catch(() => {
+        setOrder(null);
+      });
+  }, [id]);
 
   
     return (

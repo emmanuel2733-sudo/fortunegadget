@@ -5,12 +5,11 @@ import { selectUserID, selectUserName } from "../../redux/slice/authSlice";
 import Card from "../card/Card";
 import styles from "./ReviewProducts.module.scss";
 import StarsRating from "react-star-rate";
-import { addDoc, collection, Timestamp } from "firebase/firestore";
-import { db } from "../../firebase/config";
 import { toast } from "react-toastify";
 import useFetchDocument from "../../customHooks/useFetchDocument";
 import spinnerImg from "../../assests/spinner.jpg";
 import { fallbackToProductImage, getProductImage } from "../../utils/image";
+import { createReview } from "../../data/reviews";
 
 const ReviewProducts = () => {
   const [rate, setRate] = useState(0);
@@ -25,7 +24,7 @@ const ReviewProducts = () => {
     setProduct(document);
   }, [document]);
 
-  const submitReview = (e) => {
+  const submitReview = async (e) => {
     e.preventDefault();
 
     const today = new Date();
@@ -37,10 +36,10 @@ const ReviewProducts = () => {
       rate,
       review,
       reviewDate: date,
-      createdAt: Timestamp.now().toDate(),
+      createdAt: new Date(),
     };
     try {
-      addDoc(collection(db, "reviews"), reviewConfig);
+      await createReview(reviewConfig);
       toast.success("Review submitted successfully");
       setRate(0);
       setReview("");

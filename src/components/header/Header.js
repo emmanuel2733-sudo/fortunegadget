@@ -6,7 +6,11 @@ import {FaShoppingCart, FaTimes, FaUserCircle } from "react-icons/fa";
 import{HiOutlineMenuAlt3} from "react-icons/hi";
 import { toast } from "react-toastify";
 import { useDispatch, useSelector } from "react-redux";
-import {  REMOVE_ACTIVE_USER, SET_ACTIVE_USER } from "../../redux/slice/authSlice";
+import {
+  REMOVE_ACTIVE_USER,
+  SET_ACTIVE_USER,
+  SET_AUTH_READY,
+} from "../../redux/slice/authSlice";
 import { isAdminUser } from "../../utils/admin";
 import ShowOnLogin, { ShowOnLogout } from "../hiddenLink/hiddenLinks";
 import { AdminOnlyLink } from "../adminOnlyRoute/AdminOnlyRoute";
@@ -65,9 +69,11 @@ useEffect (() => {
   if (!isAuthConfigured()) {
     setdisplayName("");
     dispatch(REMOVE_ACTIVE_USER());
+    dispatch(SET_AUTH_READY(true));
     return () => undefined;
   }
 
+  dispatch(SET_AUTH_READY(false));
   subscribeToAuthUser((user) => {
     if (user) {
       setdisplayName(user.displayName);
@@ -81,7 +87,9 @@ useEffect (() => {
     } else {
      setdisplayName("");
      dispatch(REMOVE_ACTIVE_USER());
+     dispatch(SET_AUTH_READY(true));
     }
+    dispatch(SET_AUTH_READY(true));
   }).then((cleanup) => {
     unsubscribe = cleanup;
   });

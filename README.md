@@ -27,12 +27,6 @@ Create two Railway services from the same GitHub repo.
 
 Frontend environment variables:
 
-- `REACT_APP_FB_API_KEY`
-- `REACT_APP_FB_AUTH_DOMAIN`
-- `REACT_APP_FB_PROJECT_ID`
-- `REACT_APP_FB_STORAGE_BUCKET`
-- `REACT_APP_FB_MESSAGING_SENDER_ID`
-- `REACT_APP_FB_APP_ID`
 - `REACT_APP_ADMIN_UIDS`
 - `REACT_APP_PAYSTACK_PUBLIC_KEY`
 - `REACT_APP_EMAILJS_SERVICE_ID`
@@ -40,7 +34,11 @@ Frontend environment variables:
 - `REACT_APP_FRONTEND_URL=https://<YOUR-FRONTEND-RAILWAY-DOMAIN>`
 - `REACT_APP_SUPABASE_URL`
 - `REACT_APP_SUPABASE_ANON_KEY`
-- `REACT_APP_BACKEND_PROVIDER`
+- `REACT_APP_SUPABASE_PRODUCTS_TABLE=products`
+- `REACT_APP_SUPABASE_ORDERS_TABLE=orders`
+- `REACT_APP_SUPABASE_REVIEWS_TABLE=reviews`
+- `REACT_APP_SUPABASE_PRODUCT_BUCKET=product-images`
+- `REACT_APP_BACKEND_PROVIDER=supabase`
 - `PORT=3001`
 
 ### Backend Service
@@ -56,15 +54,18 @@ Backend environment variables:
 - `AUTH_PROVIDER`
 - `PAYSTACK_CURRENCY=NGN`
 - `PAYSTACK_SECRET_KEY`
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_CLIENT_EMAIL`
-- `FIREBASE_PRIVATE_KEY`
 - `ADMIN_UIDS`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_PRODUCTS_TABLE=products`
+- `SUPABASE_ORDERS_TABLE=orders`
+- `SUPABASE_REVIEWS_TABLE=reviews`
 
 ## Notes
 
 - Do not commit `.env` or `backend/.env`.
 - Railway should use the environment variables above instead.
-- Admin access is controlled by Firebase Auth UID via `REACT_APP_ADMIN_UIDS`.
+- Admin access is controlled by auth UID via `REACT_APP_ADMIN_UIDS` and `ADMIN_UIDS`.
+- Firebase has been removed from the runtime codepaths. Auth, products, orders, and reviews now use the Supabase path.
+- Product reads, product image uploads, checkout order save, review submit, and admin order/product actions use Supabase-backed routes/helpers.
+- Run `SUPABASE_PRODUCTS_SCHEMA.sql` in the Supabase SQL editor and create a `product-images` storage bucket before using Supabase products.

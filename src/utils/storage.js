@@ -22,7 +22,7 @@ export const validateImageFile = (
 
 export const getStorageErrorMessage = (error) => {
   if (error?.code === "storage/quota-exceeded") {
-    return "Firebase Storage quota exceeded. Delete old uploaded images in Firebase Storage, use smaller images, or upgrade your Firebase plan.";
+    return "Storage quota exceeded. Delete old uploaded images, use smaller images, or upgrade your storage plan.";
   }
 
   return error?.message || "Image upload failed.";

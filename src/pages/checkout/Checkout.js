@@ -6,7 +6,7 @@ import {
   selectCartItems,
   selectCartTotalAmount,
 } from "../../redux/slice/cartSlice";
-import { selectEmail } from "../../redux/slice/authSlice";
+import { selectEmail, selectIsAuthReady } from "../../redux/slice/authSlice";
 import {
   selectBillingAddress,
   selectShippingAddress,
@@ -14,6 +14,8 @@ import {
 import { toast } from "react-toastify";
 import CheckoutForm from "../../components/checkoutForm/CheckoutForm";
 import { isValidEmail, normalizeEmail, pickValidEmail } from "../../utils/email";
+import Loader from "../../components/loader/Loader";
+import { isAuthConfigured } from "../../auth/client";
 
 const paystackPublicKey = (import.meta.env.REACT_APP_PAYSTACK_PUBLIC_KEY || "").trim();
 const apiBaseUrl = (
@@ -27,6 +29,7 @@ const Checkout = () => {
   const cartItems = useSelector(selectCartItems);
   const totalAmount = useSelector(selectCartTotalAmount);
   const accountEmail = useSelector(selectEmail);
+  const isAuthReady = useSelector(selectIsAuthReady);
   const shippingAddress = useSelector(selectShippingAddress);
   const billingAddress = useSelector(selectBillingAddress);
   const customerEmail = pickValidEmail(
@@ -53,6 +56,12 @@ const Checkout = () => {
   const description = `Fortune Gadgets payment: email: ${customerEmail}, Amount: ${totalAmount}`;
 
   useEffect(() => {
+    if (isAuthConfigured() && !isAuthReady) {
+      setPaymentConfig(null);
+      setMessage("Checking your session...");
+      return;
+    }
+
     if (!paystackPublicKey) {
       setPaymentConfig(null);
       setMessage(
@@ -105,8 +114,13 @@ const Checkout = () => {
     cartItems,
     customerEmail,
     description,
+    isAuthReady,
     shippingAddress,
   ]);
+
+  if (isAuthConfigured() && !isAuthReady) {
+    return <Loader />;
+  }
 
   return (
     <>

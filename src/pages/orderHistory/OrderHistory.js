@@ -1,14 +1,15 @@
 import React, { useEffect } from "react";
+import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import Loader from "../../components/loader/Loader";
-import useFetchCollection from "../../customHooks/useFetchCollection";
 import { selectUserID } from "../../redux/slice/authSlice";
 import { selectOrderHistory, STORE_ORDERS } from "../../redux/slice/orderSlice";
 import styles from "./OrderHistory.module.scss";
+import { listOrders } from "../../data/orders";
 
 const OrderHistory = () => {
-  const { data, isLoading } = useFetchCollection("orders");
+  const [isLoading, setIsLoading] = useState(false);
   const orders = useSelector(selectOrderHistory);
   const userID = useSelector(selectUserID);
 
@@ -16,8 +17,15 @@ const OrderHistory = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    dispatch(STORE_ORDERS(data));
-  }, [dispatch, data]);
+    setIsLoading(true);
+    listOrders()
+      .then((items) => {
+        dispatch(STORE_ORDERS(items));
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [dispatch]);
 
   const handleClick = (id) => {
     navigate(`/order-details/${id}`);

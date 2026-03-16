@@ -1,18 +1,24 @@
 import React from 'react'
 import { useSelector } from 'react-redux'
-import { selectIsAdmin } from '../../redux/slice/authSlice'
+import { selectIsAdmin, selectIsAuthReady } from '../../redux/slice/authSlice'
 import PropTypes from 'prop-types'
 import { Link } from "react-router-dom";
+import Loader from '../loader/Loader';
 
 
 
 const AdminOnlyRoute = ({children}) => {
   const isAdmin = useSelector(selectIsAdmin)
+  const isAuthReady = useSelector(selectIsAuthReady)
 
   AdminOnlyRoute.propTypes = {
     children: PropTypes.node.isRequired,
     };
   
+  if (!isAuthReady) {
+    return <Loader />;
+  }
+
   if (isAdmin) {
     return children
   }
@@ -31,11 +37,16 @@ const AdminOnlyRoute = ({children}) => {
 };
 export const AdminOnlyLink = ({children}) => {
   const isAdmin = useSelector(selectIsAdmin)
+  const isAuthReady = useSelector(selectIsAuthReady)
 
   AdminOnlyLink.propTypes = {
     children: PropTypes.node.isRequired,
     };
   
+  if (!isAuthReady) {
+    return null
+  }
+
   if (isAdmin) {
     return children
   }

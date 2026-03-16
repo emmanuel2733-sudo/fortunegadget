@@ -1,12 +1,9 @@
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, {useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { db, storage } from '../../../firebase/config';
 import styles from "./ViewProducts.module.scss"
 import {FaEdit, FaTrashAlt} from "react-icons/fa"
 import Loader from '../../loader/Loader';
-import { deleteObject, ref } from 'firebase/storage';
 import Notiflix from 'notiflix';
 import {useDispatch, useSelector} from 'react-redux';
 import { selectProducts, STORE_PRODUCTS } from '../../../redux/slice/productSlice';
@@ -17,13 +14,15 @@ import Pagination from '../../pagination/Pagination';
 import { normalizeProductCategory } from '../../../utils/category';
 import { fallbackToProductImage, getProductImage } from '../../../utils/image';
 import Card from '../../card/Card';
+import { deleteAdminProduct } from '../../../data/adminProducts';
+import { removeProductImage } from '../../../data/products';
 
 
 
 
 const ViewProducts = () => {
   const [search, setSearch] = useState("");
-  const {data, isLoading, error} = useFetchCollection("products")
+  const {data, isLoading, error, refreshData} = useFetchCollection("products")
   const products = useSelector(selectProducts)
   const filteredProducts = useSelector(selectFilteredProducts)
  
@@ -119,11 +118,12 @@ onSnapshot(q, (snapshot) => {
     );
   };
 
-  const deleteProduct = async(id, imageURL) => {
+  const deleteProduct = async(id, imageValue) => {
     try{
-      await deleteDoc(doc(db, "products", id));
-      const storageRef = ref(storage, imageURL);
-      await deleteObject(storageRef)
+      await deleteAdminProduct(id);
+      await removeProductImage(imageValue).catch(() => undefined);
+
+      refreshData();
       toast.success("Product delected successfuly.")
 
 
@@ -164,7 +164,7 @@ onSnapshot(q, (snapshot) => {
         </thead>
         <tbody>
         {currentProducts.map((product, index) =>{
-          const {id, name, price, imageURL, category} = product;
+          const {id, name, price, imagePath, imageURL, category} = product;
           return (
             <tr key={id}>
               <td>
@@ -192,7 +192,7 @@ onSnapshot(q, (snapshot) => {
                 <FaEdit size={20} color="red"/>
               </Link>
               &nbsp;
-              <FaTrashAlt size={20} color="red" onClick={() => confirmDelete(id, imageURL)} />
+              <FaTrashAlt size={20} color="red" onClick={() => confirmDelete(id, imagePath || imageURL)} />
               </td>
             </tr>
           )
