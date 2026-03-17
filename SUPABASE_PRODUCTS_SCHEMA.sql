@@ -8,7 +8,7 @@ create table if not exists public.products (
   price numeric(12, 2) not null check (price > 0),
   category text not null,
   brand text not null,
-  desc text not null,
+  "desc" text not null,
   created_at timestamptz not null default now(),
   edited_at timestamptz
 );
