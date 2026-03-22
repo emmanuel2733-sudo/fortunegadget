@@ -1,0 +1,26 @@
+.directory {
+  padding: 2rem 0 0;
+}
+
+.header {
+  margin-bottom: 1rem;
+
+  p {
+    color: var(--dark-gray);
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  background: #fff;
+}

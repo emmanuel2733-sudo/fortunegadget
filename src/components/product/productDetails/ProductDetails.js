@@ -13,12 +13,12 @@ import { listReviews } from "../../../data/reviews";
 
 
 const ProductDetails = () => {
-const {id} = useParams()
+const {id, vendorSlug} = useParams()
 const [product, setProduct] = useState(null)
 const [reviews, setReviews] = useState([]);
 const dispatch = useDispatch()
 const cartItems = useSelector(selectCartItems);
-const {document} = useFetchDocument("products", id)
+const {document} = useFetchDocument("products", id, { vendorSlug })
 const filteredReviews = reviews.filter((review) => review.productID === id)
 
 const cart = cartItems.find((cart) => cart.id === id);
@@ -56,7 +56,7 @@ const isCardAdded = cartItems.findIndex((cart) =>{
       <div className={`container ${styles.product}`}>
         <h2>Product Details</h2>
         <div>
-        <Link to ="/#products">&larr; Back to Products
+        <Link to ={vendorSlug ? `/store/${vendorSlug}` : "/#products"}>&larr; Back to Products
         </Link>
         </div>
       

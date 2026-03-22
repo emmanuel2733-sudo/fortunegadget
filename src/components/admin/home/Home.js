@@ -10,6 +10,7 @@ import {
   selectTotalOrderAmount,
   STORE_ORDERS,
 } from "../../../redux/slice/orderSlice";
+import { selectVendor } from "../../../redux/slice/authSlice";
 import { selectProducts, STORE_PRODUCTS } from "../../../redux/slice/productSlice";
 import useFetchCollection from "../../../customHooks/useFetchCollection";
 import { listOrders } from "../../../data/orders";
@@ -26,7 +27,10 @@ const Home = () => {
   const products = useSelector(selectProducts);
   const orders = useSelector(selectOrderHistory);
   const totalOrderAmount = useSelector(selectTotalOrderAmount);
-  const { data: productData } = useFetchCollection("products");
+  const vendor = useSelector(selectVendor);
+  const { data: productData } = useFetchCollection("products", {
+    vendorId: vendor?.id,
+  });
 
   const dispatch = useDispatch();
 
@@ -64,6 +68,7 @@ const Home = () => {
   return (
     <div className={styles.home}>
       <h2>Admin Home</h2>
+      {vendor?.name ? <p>Managing {vendor.name}</p> : null}
       <div className={styles["info-box"]}>
         <InfoBox
           cardClass={`${styles.card} ${styles.card1}`}

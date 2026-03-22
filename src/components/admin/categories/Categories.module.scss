@@ -1,0 +1,46 @@
+.categories {
+  display: grid;
+  gap: 1.5rem;
+
+  .header {
+    p {
+      color: var(--dark-gray);
+    }
+  }
+
+  .form {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 40rem;
+  }
+
+  .list {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 0.4rem;
+    background-color: #fff;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+}
+
+@media screen and (max-width: 700px) {
+  .categories {
+    .item {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 1rem;
+    }
+  }
+}

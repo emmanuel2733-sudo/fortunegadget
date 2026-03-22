@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 //import AdminOnlyRoute from '../../components/adminOnlyRoute/AdminOnlyRoute';
 import Product from '../../components/product/Product';
 import Slider from '../../components/slider/Slider';
+import VendorDirectory from '../../components/vendors/VendorDirectory';
 
 
 
@@ -28,6 +29,7 @@ useEffect (() => {
   return (
     <div>
       <Slider/>
+       <VendorDirectory />
        <Product/>
        
      

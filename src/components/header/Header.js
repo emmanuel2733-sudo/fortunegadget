@@ -10,8 +10,8 @@ import {
   REMOVE_ACTIVE_USER,
   SET_ACTIVE_USER,
   SET_AUTH_READY,
+  selectIsSuperAdmin,
 } from "../../redux/slice/authSlice";
-import { isAdminUser } from "../../utils/admin";
 import ShowOnLogin, { ShowOnLogout } from "../hiddenLink/hiddenLinks";
 import { AdminOnlyLink } from "../adminOnlyRoute/AdminOnlyRoute";
 import {
@@ -23,6 +23,7 @@ import {
   signOutUser,
   subscribeToAuthUser,
 } from "../../auth/client";
+import { syncCurrentUserContext } from "../../data/session";
 
 const logo =(
   <div className={styles.logo}>
@@ -44,6 +45,7 @@ const Header = () => {
   const [displayName, setdisplayName] = useState("");
   const [scrollPage, setScrollPage] = useState(false)
   const cartTotalQuantity = useSelector(selectCartTotalQuantity)
+  const isSuperAdmin = useSelector(selectIsSuperAdmin);
   
   useEffect (() => {
     dispatch (CALCULATE_TOTAL_QUANTITY())
@@ -76,20 +78,34 @@ useEffect (() => {
   dispatch(SET_AUTH_READY(false));
   subscribeToAuthUser((user) => {
     if (user) {
-      setdisplayName(user.displayName);
+      syncCurrentUserContext(user)
+        .then((appContext) => {
+          setdisplayName(appContext.displayName || user.displayName);
 
-      dispatch(SET_ACTIVE_USER({
-        email: user.email,
-        userName: user.displayName,
-        userID: user.id,
-        isAdmin: isAdminUser(user.email, user.id),
-      }))
+          dispatch(SET_ACTIVE_USER({
+            email: appContext.email || user.email,
+            userName: appContext.displayName || user.displayName,
+            userID: appContext.userID || user.id,
+            role: appContext.role,
+            vendor: appContext.vendor,
+            isAdmin: appContext.canAccessVendorAdmin || appContext.isSuperAdmin,
+            isSuperAdmin: appContext.isSuperAdmin,
+            isVendorAdmin: appContext.isVendorAdmin,
+          }))
+        })
+        .catch((error) => {
+          toast.error(error?.message || "Unable to load your account access.");
+          setdisplayName(user.displayName || "");
+          dispatch(REMOVE_ACTIVE_USER());
+        })
+        .finally(() => {
+          dispatch(SET_AUTH_READY(true));
+        });
     } else {
      setdisplayName("");
      dispatch(REMOVE_ACTIVE_USER());
      dispatch(SET_AUTH_READY(true));
     }
-    dispatch(SET_AUTH_READY(true));
   }).then((cleanup) => {
     unsubscribe = cleanup;
   });
@@ -130,6 +146,9 @@ const cart = (
         </span>
 );
 
+const adminLink = isSuperAdmin ? "/super-admin/home" : "/admin/home";
+const adminLabel = isSuperAdmin ? "Super Admin" : "Admin";
+
   return (
     <header className={scrollPage ? `${styles.fixed}` : null}>
       <div className={styles.header}>
@@ -151,8 +170,8 @@ const cart = (
 
         <li>
                 <AdminOnlyLink>
-                  <Link to="/admin/home">
-                    <button className="--btn --btn-primary">Admin</button>
+                  <Link to={adminLink}>
+                    <button className="--btn --btn-primary">{adminLabel}</button>
                   </Link>
                 </AdminOnlyLink>
               </li>

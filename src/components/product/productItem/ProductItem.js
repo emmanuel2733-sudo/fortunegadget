@@ -33,11 +33,15 @@ const addToCart = (product) => {
   dispatch(CALCULATE_TOTAL_QUANTITY())
 };
 
+const productLink = product?.vendorSlug
+  ? `/store/${product.vendorSlug}/product/${id}`
+  : `/product-details/${id}`;
+
 
   return (
     <Card cardClass={grid ?  `${styles.grid}`:
      `${styles.list}`}>
-      <Link to={`/product-details/${id}`} >
+      <Link to={productLink} >
       <div className={styles.img}>
         <img src={getProductImage(imageURL)} alt={name} onError={fallbackToProductImage} />
       </div>

@@ -1,0 +1,31 @@
+.navbar {
+  background: var(--dark-blue);
+  min-height: 100%;
+  padding: 2rem 1.25rem;
+  color: #fff;
+
+  .user {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+  }
+
+  .brand span {
+    color: orangered;
+  }
+
+  nav ul {
+    list-style: none;
+    display: grid;
+    gap: 1rem;
+  }
+
+  nav a {
+    color: #fff;
+  }
+}
+
+.active {
+  color: orangered !important;
+}

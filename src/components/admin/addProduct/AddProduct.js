@@ -1,5 +1,5 @@
 import React from 'react'
-import {useState} from 'react'
+import {useEffect, useMemo, useState} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import Card from '../../card/Card'
@@ -7,6 +7,7 @@ import styles from "./AddProduct.module.scss"
 import Loader from "../../loader/Loader";
 import {useSelector} from "react-redux"; 
 import { selectProducts} from "../../../redux/slice/productSlice"; 
+import { selectVendor } from '../../../redux/slice/authSlice';
 import { normalizeCategory, normalizeProductCategory } from '../../../utils/category';
 import { compressImageFile } from '../../../utils/imageCompression';
 import { getStorageErrorMessage, validateImageFile } from '../../../utils/storage';
@@ -19,21 +20,15 @@ import {
   removeProductImage,
   uploadProductImage,
 } from '../../../data/products';
-
-
-
-const categories =[
-  {id: 1, name: "Laptop"},
-  {id: 2, name: "Electronices"},
-  {id: 3, name: "Accessories"},
-  {id: 4, name: "Phone"},
-];
+import { listAdminCategories } from '../../../data/categories';
 
 const intialState = {
+  vendorID: "",
   name: "",
   imageURL: "",
   imagePath: "",
   price: null,
+  categoryID: "",
   category: "",
   brand: "",
   desc: "",
@@ -51,14 +46,16 @@ const withTimeout = (promise, timeoutMs, message) =>
 const AddProduct = () => {
   const {id} = useParams()
   const products = useSelector(selectProducts);
+  const vendor = useSelector(selectVendor);
   const productEdit = normalizeProductCategory(
     products.find((item) => item.id === id)
   );
+  const [categories, setCategories] = useState([]);
 
 
   const [product, setProduct] = useState(() => {
     const newSate = detectForm(id,
-      {...intialState},
+      {...intialState, vendorID: vendor?.id || ""},
       productEdit
       )
       return newSate 
@@ -71,6 +68,10 @@ const AddProduct = () => {
   const isImageUploading = uploadProgress > 0 && uploadProgress < 100;
   const isUploadBusy = isPreparingImage || isImageUploading;
   const isSaveDisabled = isUploadBusy || isLoading;
+  const normalizedCategories = useMemo(
+    () => categories.filter((category) => category.isActive),
+    [categories]
+  );
 
 
   function detectForm(id, f1,f2) {
@@ -82,8 +83,51 @@ const AddProduct = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (name === "categoryID") {
+      const selectedCategory = normalizedCategories.find((item) => item.id === value);
+      setProduct({
+        ...product,
+        categoryID: value,
+        category: selectedCategory?.name || "",
+      });
+      return;
+    }
+
     setProduct({ ...product, [name]: value });
   };
+
+  useEffect(() => {
+    listAdminCategories()
+      .then((items) => {
+        setCategories(items);
+      })
+      .catch((error) => {
+        toast.error(error?.message || "Unable to load store categories.");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!vendor?.id) {
+      return;
+    }
+
+    setProduct((current) => ({
+      ...current,
+      vendorID: current.vendorID || vendor.id,
+    }));
+  }, [vendor]);
+
+  useEffect(() => {
+    if (!productEdit) {
+      return;
+    }
+
+    setProduct((current) => ({
+      ...current,
+      vendorID: productEdit.vendorID || current.vendorID || vendor?.id || "",
+      categoryID: productEdit.categoryID || current.categoryID || "",
+    }));
+  }, [productEdit, vendor]);
 
   const handleImageChange = async (e) => {
     const productProviderError = getProductProviderInitError();
@@ -159,10 +203,12 @@ const AddProduct = () => {
       try {
         await withTimeout(
           createAdminProduct({
+          vendorID: product.vendorID || vendor?.id || "",
           name: product.name,
           imageURL: product.imageURL.trim(),
           imagePath: product.imagePath,
           price: Number(product.price),
+          categoryID: product.categoryID,
           category: normalizeCategory(product.category),
           brand: product.brand,
           desc: product.desc,
@@ -172,7 +218,7 @@ const AddProduct = () => {
           "Saving the product took too long. Check the Railway backend, Supabase configuration, and network connection."
         );
         setUploadProgress(0)
-        setProduct({ ...intialState})
+        setProduct({ ...intialState, vendorID: vendor?.id || ""})
 
         navigate ("/admin/all-product", {
           state: { successMessage: "Product uploaded successfully." },
@@ -203,10 +249,12 @@ const editProduct = async (e) => {
   try {
     await withTimeout(
       updateAdminProduct(id, {
+      vendorID: product.vendorID || vendor?.id || "",
       name: product.name,
       imageURL: product.imageURL.trim(),
       imagePath: product.imagePath,
       price: Number(product.price),
+      categoryID: product.categoryID,
       category: normalizeCategory(product.category),
       brand: product.brand,
       desc: product.desc,
@@ -297,15 +345,15 @@ const editProduct = async (e) => {
               onChange={(e) => handleInputChange(e)}
             />
 
-            <select required name="category" 
-            value={product.category} onChange=
+            <select required name="categoryID" 
+            value={product.categoryID} onChange=
             {(e) => handleInputChange(e)}>
               <option value="" disabled>
                 --choose product category
               </option>
-              {categories.map((cat) =>{
+              {normalizedCategories.map((cat) =>{
                 return (
-                  <option key={cat.id} value={cat.name}>
+                  <option key={cat.id} value={cat.id}>
                     {cat.name}
 
                   </option>

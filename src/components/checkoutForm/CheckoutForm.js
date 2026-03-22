@@ -56,6 +56,8 @@ const CheckoutForm = ({ paymentConfig }) => {
     const date = today.toDateString();
     const time = today.toLocaleTimeString();
     const orderConfig = {
+      vendorID:
+        String(cartItems[0]?.vendorID || paymentConfig?.vendorID || "").trim(),
       userID,
       userEmail: customerEmail,
       orderDate: date,

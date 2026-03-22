@@ -36,6 +36,7 @@ const requestReviewsApi = async (endpoint, options = {}, requireAuth = false) =>
 
 export const mapReviewRecord = (review = {}) => ({
   id: review.id,
+  vendorID: String(review.vendor_id || review.vendorID || "").trim(),
   userID: String(review.user_id || review.userID || "").trim(),
   userName: String(review.user_name || review.userName || "").trim(),
   productID: String(review.product_id || review.productID || "").trim(),

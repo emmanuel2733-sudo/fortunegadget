@@ -5,11 +5,12 @@ import {
   subscribeToSupabaseProducts,
 } from "../data/products";
 
-const useFetchCollection = (collectionName) => {
+const useFetchCollection = (collectionName, options = {}) => {
   const [data, setData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
+  const serializedOptions = JSON.stringify(options || {});
 
   const refreshData = useCallback(() => {
     setReloadToken((currentValue) => currentValue + 1);
@@ -42,7 +43,8 @@ const useFetchCollection = (collectionName) => {
         setIsLoading(false);
         setError(message);
         toast.error(message);
-      }
+      },
+      JSON.parse(serializedOptions)
     )
       .then((cleanup) => {
         unsubscribe = cleanup;
@@ -59,7 +61,7 @@ const useFetchCollection = (collectionName) => {
       });
 
     return () => unsubscribe();
-  }, [collectionName, reloadToken]);
+  }, [collectionName, reloadToken, serializedOptions]);
 
   return { data, isLoading, error, refreshData };
 };

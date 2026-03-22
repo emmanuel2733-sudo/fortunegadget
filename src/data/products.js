@@ -1,4 +1,5 @@
 import { supabase, isSupabaseEnabled } from "../supabase/config";
+import { getPublicVendorBySlug } from "./vendors";
 
 const env = import.meta.env;
 
@@ -70,6 +71,8 @@ export const getProductProviderInitError = () => {
 
 export const mapSupabaseProductRow = (row = {}) => {
   const imagePath = normalizeProductImagePath(row.image_path || row.imagePath || "");
+  const vendor = row.vendor || row.vendors || null;
+  const categoryRecord = row.category_ref || row.vendor_categories || null;
   const imageURL =
     String(row.image_url || row.imageURL || "").trim() ||
     getSupabaseStoragePublicUrl(imagePath);
@@ -81,14 +84,22 @@ export const mapSupabaseProductRow = (row = {}) => {
     imageURL,
     price: Number(row.price || 0),
     category: String(row.category || "").trim(),
+    categoryID: String(row.category_id || row.categoryID || categoryRecord?.id || "").trim(),
+    categorySlug: String(categoryRecord?.slug || "").trim(),
     brand: String(row.brand || "").trim(),
     desc: String(row.desc || "").trim(),
+    vendorID: String(row.vendor_id || row.vendorID || vendor?.id || "").trim(),
+    vendorName: String(vendor?.name || "").trim(),
+    vendorSlug: String(vendor?.slug || "").trim(),
+    vendorStatus: String(vendor?.status || "").trim(),
     createdAt: row.created_at || row.createdAt || null,
     editedAt: row.edited_at || row.editedAt || null,
   };
 };
 
 export const mapProductForSupabase = (product = {}) => ({
+  vendor_id: String(product.vendorID || "").trim() || null,
+  category_id: String(product.categoryID || "").trim() || null,
   name: String(product.name || "").trim(),
   image_url: String(product.imageURL || "").trim(),
   image_path: normalizeProductImagePath(product.imagePath || product.imageURL || ""),
@@ -100,15 +111,46 @@ export const mapProductForSupabase = (product = {}) => ({
   edited_at: toIsoString(product.editedAt),
 });
 
-export const listSupabaseProducts = async () => {
+const buildProductsQuery = () =>
+  supabase
+    .from(supabaseProductsTable)
+    .select(
+      `
+        *,
+        vendor:vendors (
+          id,
+          name,
+          slug,
+          status
+        ),
+        category_ref:vendor_categories (
+          id,
+          name,
+          slug
+        )
+      `
+    )
+    .order("created_at", { ascending: false });
+
+export const listSupabaseProducts = async ({ vendorId = "", vendorSlug = "" } = {}) => {
   if (!supabase) {
     throw new Error(getProductProviderInitError() || "Supabase is not configured.");
   }
 
-  const { data, error } = await supabase
-    .from(supabaseProductsTable)
-    .select("*")
-    .order("created_at", { ascending: false });
+  let normalizedVendorId = String(vendorId || "").trim();
+
+  if (!normalizedVendorId && vendorSlug) {
+    const vendor = await getPublicVendorBySlug(vendorSlug);
+    normalizedVendorId = String(vendor?.id || "").trim();
+  }
+
+  let query = buildProductsQuery();
+
+  if (normalizedVendorId) {
+    query = query.eq("vendor_id", normalizedVendorId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -117,16 +159,25 @@ export const listSupabaseProducts = async () => {
   return (data || []).map(mapSupabaseProductRow);
 };
 
-export const getSupabaseProductById = async (productId) => {
+export const getSupabaseProductById = async (productId, { vendorId = "", vendorSlug = "" } = {}) => {
   if (!supabase) {
     throw new Error(getProductProviderInitError() || "Supabase is not configured.");
   }
 
-  const { data, error } = await supabase
-    .from(supabaseProductsTable)
-    .select("*")
-    .eq("id", productId)
-    .maybeSingle();
+  let normalizedVendorId = String(vendorId || "").trim();
+
+  if (!normalizedVendorId && vendorSlug) {
+    const vendor = await getPublicVendorBySlug(vendorSlug);
+    normalizedVendorId = String(vendor?.id || "").trim();
+  }
+
+  let query = buildProductsQuery().eq("id", productId);
+
+  if (normalizedVendorId) {
+    query = query.eq("vendor_id", normalizedVendorId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     throw error;
@@ -135,9 +186,13 @@ export const getSupabaseProductById = async (productId) => {
   return data ? mapSupabaseProductRow(data) : null;
 };
 
-export const subscribeToSupabaseProducts = async (onData, onError) => {
+export const subscribeToSupabaseProducts = async (
+  onData,
+  onError,
+  { vendorId = "", vendorSlug = "" } = {}
+) => {
   const loadProducts = async () => {
-    const products = await listSupabaseProducts();
+    const products = await listSupabaseProducts({ vendorId, vendorSlug });
     onData(products);
   };
 
@@ -148,7 +203,7 @@ export const subscribeToSupabaseProducts = async (onData, onError) => {
   }
 
   const channel = supabase
-    .channel("products-feed")
+    .channel(`products-feed-${vendorId || vendorSlug || "all"}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: supabaseProductsTable },

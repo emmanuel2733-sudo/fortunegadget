@@ -31,6 +31,7 @@ const requestOrdersApi = async (endpoint, options = {}) => {
 
 export const mapOrderRecord = (order = {}) => ({
   id: order.id,
+  vendorID: String(order.vendor_id || order.vendorID || "").trim(),
   userID: String(order.user_id || order.userID || "").trim(),
   userEmail: String(order.user_email || order.userEmail || "").trim(),
   orderDate: String(order.order_date || order.orderDate || "").trim(),

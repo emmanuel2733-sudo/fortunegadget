@@ -16,6 +16,20 @@ const cartSlice = createSlice({
   reducers: {
     ADD_TO_CART(state, action) {
       //   console.log(action.payload);
+      const incomingVendorId = String(action.payload.vendorID || "").trim();
+      const existingVendorId = String(state.cartItems[0]?.vendorID || "").trim();
+
+      if (
+        existingVendorId &&
+        incomingVendorId &&
+        existingVendorId !== incomingVendorId
+      ) {
+        toast.error("You can only checkout products from one vendor at a time.", {
+          position: "top-left",
+        });
+        return;
+      }
+
       const productIndex = state.cartItems.findIndex(
         (item) => item.id === action.payload.id
       );

@@ -7,6 +7,7 @@ import Loader from '../../loader/Loader';
 import Notiflix from 'notiflix';
 import {useDispatch, useSelector} from 'react-redux';
 import { selectProducts, STORE_PRODUCTS } from '../../../redux/slice/productSlice';
+import { selectVendor } from '../../../redux/slice/authSlice';
 import useFetchCollection from '../../../customHooks/useFetchCollection';
 import { FILTER_BY_SEARCH, selectFilteredProducts } from '../../../redux/slice/filterSlice';
 import Search from '../../search/Search';
@@ -22,7 +23,10 @@ import { removeProductImage } from '../../../data/products';
 
 const ViewProducts = () => {
   const [search, setSearch] = useState("");
-  const {data, isLoading, error, refreshData} = useFetchCollection("products")
+  const vendor = useSelector(selectVendor);
+  const {data, isLoading, error, refreshData} = useFetchCollection("products", {
+    vendorId: vendor?.id,
+  })
   const products = useSelector(selectProducts)
   const filteredProducts = useSelector(selectFilteredProducts)
  

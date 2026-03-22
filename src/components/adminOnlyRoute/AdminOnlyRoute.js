@@ -1,6 +1,11 @@
 import React from 'react'
 import { useSelector } from 'react-redux'
-import { selectIsAdmin, selectIsAuthReady } from '../../redux/slice/authSlice'
+import {
+  selectIsAdmin,
+  selectIsAuthReady,
+  selectIsSuperAdmin,
+  selectIsVendorAdmin,
+} from '../../redux/slice/authSlice'
 import PropTypes from 'prop-types'
 import { Link } from "react-router-dom";
 import Loader from '../loader/Loader';
@@ -53,5 +58,57 @@ export const AdminOnlyLink = ({children}) => {
   return null
 
 }
+
+export const VendorAdminOnlyRoute = ({ children }) => {
+  const isVendorAdmin = useSelector(selectIsVendorAdmin);
+  const isAuthReady = useSelector(selectIsAuthReady);
+
+  if (!isAuthReady) {
+    return <Loader />;
+  }
+
+  if (isVendorAdmin) {
+    return children;
+  }
+
+  return (
+    <section style={{ height: "80vh" }}>
+      <div className="container">
+        <h2>Permission Denied.</h2>
+        <p>This area is for vendor admins only.</p>
+        <br />
+        <Link to="/">
+          <button className="--btn">&larr; Back To Home</button>
+        </Link>
+      </div>
+    </section>
+  );
+};
+
+export const SuperAdminOnlyRoute = ({ children }) => {
+  const isSuperAdmin = useSelector(selectIsSuperAdmin);
+  const isAuthReady = useSelector(selectIsAuthReady);
+
+  if (!isAuthReady) {
+    return <Loader />;
+  }
+
+  if (isSuperAdmin) {
+    return children;
+  }
+
+  return (
+    <section style={{ height: "80vh" }}>
+      <div className="container">
+        <h2>Permission Denied.</h2>
+        <p>This area is for super admins only.</p>
+        <br />
+        <Link to="/">
+          <button className="--btn">&larr; Back To Home</button>
+        </Link>
+      </div>
+    </section>
+  );
+};
 
 export default AdminOnlyRoute

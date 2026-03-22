@@ -1,107 +1,97 @@
 const express = require("express");
 const cors = require("cors");
-const dotenv = require("dotenv");
-const https = require("https");
-const path = require("path");
-
-dotenv.config({ path: path.resolve(__dirname, ".env") });
+const { APP_ROLES, config, normalizeUrl } = require("./lib/config");
+const { buildTablePath, supabaseRestRequest } = require("./lib/supabase");
+const {
+  assertVendorOperational,
+  createSupabaseAuthUser,
+  getProductById,
+  getProfileById,
+  getRequestedVendorId,
+  getVendorById,
+  getVendorBySlug,
+  getVendorCategoryById,
+  getVendorMembershipsByVendorId,
+  getVendorPaystackAccount,
+  insertProfile,
+  isValidEmail,
+  listVendorCategories,
+  listVendors,
+  normalizeEmail,
+  queryManyRows,
+  requireAuthenticatedUser,
+  requireSuperAdminUser,
+  requireVendorManagerUser,
+  resolveManagedVendorId,
+  updateProfile,
+  updateSupabaseAuthUser,
+} = require("./lib/marketplace");
+const {
+  collectUniqueVendorIds,
+  computeOrderAmount,
+  createReference,
+  hasUsablePaystackSecret,
+  paystackRequest,
+} = require("./lib/payments");
+const {
+  normalizeCategoryPayload,
+  normalizeOrderPayload,
+  normalizeProductPayload,
+  normalizeReviewPayload,
+  normalizeVendorPayload,
+  toSupabaseOrderRecord,
+  toSupabaseProductRecord,
+  toSupabaseReviewRecord,
+  validateCategoryPayload,
+  validateOrderPayload,
+  validateProductPayload,
+  validateReviewPayload,
+  validateVendorPayload,
+} = require("./lib/normalizers");
 
 const app = express();
-const PORT = Number(process.env.PORT || 4242);
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-const PAYSTACK_API_HOST = "api.paystack.co";
-const paystackSecretKey = (process.env.PAYSTACK_SECRET_KEY || "").trim();
-const supabaseUrl = normalizeUrl(process.env.SUPABASE_URL || "");
-const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
-const supabaseProductsTable = (process.env.SUPABASE_PRODUCTS_TABLE || "products").trim();
-const supabaseOrdersTable = (process.env.SUPABASE_ORDERS_TABLE || "orders").trim();
-const supabaseReviewsTable = (process.env.SUPABASE_REVIEWS_TABLE || "reviews").trim();
-const adminUids = new Set(
-  (process.env.ADMIN_UIDS || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-);
 
-function normalizeUrl(value) {
-  return String(value || "").trim().replace(/\/+$/, "");
-}
+const getVendorManagementRecord = async (vendor) => {
+  const [paystackAccount, memberships] = await Promise.all([
+    getVendorPaystackAccount(vendor.id),
+    getVendorMembershipsByVendorId(vendor.id),
+  ]);
 
-const normalizedFrontendUrl = normalizeUrl(FRONTEND_URL);
+  const primaryMembership =
+    memberships.find((membership) => membership.is_primary) || memberships[0] || null;
+  const primaryAdmin = primaryMembership?.user_id
+    ? await getProfileById(primaryMembership.user_id)
+    : null;
 
-function hasUsablePaystackSecret(key) {
-  return Boolean(key) && key.startsWith("sk_") && !key.includes("your_secret_key");
-}
-
-function hasSupabaseAdminConfig() {
-  return Boolean(supabaseUrl && supabaseServiceRoleKey);
-}
-
-async function getSupabaseUserFromToken(token) {
-  if (!hasSupabaseAdminConfig()) {
-    throw new Error(
-      "Supabase Admin is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to backend variables."
-    );
-  }
-
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: supabaseServiceRoleKey,
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload?.msg || payload?.message || "Unable to verify Supabase credentials.");
-  }
-
-  return payload;
-}
-
-async function supabaseRestRequest(method, pathname, payload) {
-  if (!hasSupabaseAdminConfig()) {
-    throw new Error(
-      "Supabase Admin is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to backend variables."
-    );
-  }
-
-  const body = payload ? JSON.stringify(payload) : undefined;
-  const response = await fetch(`${supabaseUrl}${pathname}`, {
-    method,
-    headers: {
-      apikey: supabaseServiceRoleKey,
-      Authorization: `Bearer ${supabaseServiceRoleKey}`,
-      Accept: "application/json",
-      ...(body ? { "Content-Type": "application/json", Prefer: "return=representation" } : {}),
-    },
-    ...(body ? { body } : {}),
-  });
-
-  const json = await response.json().catch(() => []);
-
-  if (!response.ok) {
-    throw new Error(
-      json?.message ||
-        json?.error_description ||
-        json?.error ||
-        "Supabase request failed."
-    );
-  }
-
-  return json;
-}
+  return {
+    id: vendor.id,
+    name: vendor.name,
+    slug: vendor.slug,
+    logo_url: vendor.logo_url || "",
+    banner_url: vendor.banner_url || "",
+    description: vendor.description || "",
+    status: vendor.status || "active",
+    license_status: vendor.license_status || "active",
+    currency: vendor.currency || "NGN",
+    created_at: vendor.created_at || null,
+    updated_at: vendor.updated_at || null,
+    subaccount_code: paystackAccount?.subaccount_code || "",
+    business_name: paystackAccount?.business_name || "",
+    settlement_bank: paystackAccount?.settlement_bank || "",
+    account_number_last4: paystackAccount?.account_number_last4 || "",
+    percentage_charge: paystackAccount?.percentage_charge || 0,
+    primary_admin_user_id: primaryAdmin?.id || "",
+    primary_admin_email: primaryAdmin?.email || "",
+    primary_admin_name: primaryAdmin?.full_name || "",
+    primary_admin_active:
+      primaryAdmin?.is_active === undefined ? true : Boolean(primaryAdmin.is_active),
+  };
+};
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-
-      if (normalizeUrl(origin) === normalizedFrontendUrl) {
+      if (!origin || normalizeUrl(origin) === config.normalizedFrontendUrl) {
         callback(null, true);
         return;
       }
@@ -116,408 +106,364 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-function toIsoString(value) {
-  if (!value) {
-    return new Date().toISOString();
-  }
+app.get("/me", requireAuthenticatedUser, (req, res) => {
+  const context = req.userContext;
+  res.json({
+    userID: context.user.id,
+    email: context.user.email,
+    full_name: context.profile.full_name,
+    role: context.role,
+    is_active: context.profile.is_active,
+    vendor: context.vendor,
+  });
+});
 
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-}
+app.post("/me/sync", requireAuthenticatedUser, (req, res) => {
+  const context = req.userContext;
+  res.json({
+    userID: context.user.id,
+    email: context.user.email,
+    full_name: context.profile.full_name,
+    role: context.role,
+    is_active: context.profile.is_active,
+    vendor: context.vendor,
+  });
+});
 
-function normalizeProductPayload(payload = {}) {
-  return {
-    name: String(payload.name || "").trim(),
-    imageURL: String(payload.imageURL || "").trim(),
-    imagePath: String(payload.imagePath || "").trim(),
-    price: Number(payload.price),
-    category: String(payload.category || "").trim(),
-    brand: String(payload.brand || "").trim(),
-    desc: String(payload.desc || "").trim(),
-    createdAt: payload.createdAt || null,
-    ...(payload.editedAt ? { editedAt: payload.editedAt } : {}),
-  };
-}
-
-function toSupabaseProductRecord(product) {
-  return {
-    name: product.name,
-    image_url: product.imageURL,
-    image_path: product.imagePath,
-    price: product.price,
-    category: product.category,
-    brand: product.brand,
-    desc: product.desc,
-    created_at: toIsoString(product.createdAt),
-    edited_at: product.editedAt ? toIsoString(product.editedAt) : null,
-  };
-}
-
-function validateProductPayload(product) {
-  if (!product.name) {
-    return "Product name is required.";
-  }
-
-  if (!product.imageURL) {
-    return "Product image URL is required.";
-  }
-
-  if (!Number.isFinite(product.price) || product.price <= 0) {
-    return "Product price must be greater than zero.";
-  }
-
-  if (!product.category) {
-    return "Product category is required.";
-  }
-
-  if (!product.brand) {
-    return "Product brand is required.";
-  }
-
-  if (!product.desc) {
-    return "Product description is required.";
-  }
-
-  return "";
-}
-
-async function getAuthenticatedUserFromToken(token) {
-  const user = await getSupabaseUserFromToken(token);
-  return {
-    email: normalizeEmail(user.email),
-    id: user.id,
-    rawUser: user,
-  };
-}
-
-async function requireAuthenticatedUser(req, res, next) {
+app.get("/super-admin/vendors", requireSuperAdminUser, async (_req, res) => {
   try {
-    const authHeader = req.headers.authorization || "";
-
-    if (!authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing authorization token." });
-    }
-
-    const token = authHeader.slice("Bearer ".length).trim();
-    req.user = await getAuthenticatedUserFromToken(token);
-    return next();
+    const vendors = await listVendors();
+    const payload = await Promise.all(vendors.map((vendor) => getVendorManagementRecord(vendor)));
+    res.json(payload);
   } catch (error) {
-    return res.status(401).json({
-      error: error?.message || "Unable to verify credentials.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to load vendors." });
   }
-}
+});
 
-async function requireAdminUser(req, res, next) {
+app.post("/super-admin/vendors", requireSuperAdminUser, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization || "";
+    const vendor = normalizeVendorPayload(req.body);
+    const validationError = validateVendorPayload(vendor, isValidEmail);
 
-    if (!authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing admin authorization token." });
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
     }
 
-    const token = authHeader.slice("Bearer ".length).trim();
-    const user = await getAuthenticatedUserFromToken(token);
-
-    if (adminUids.size > 0 && !adminUids.has(user.id)) {
-      return res.status(403).json({ error: "You do not have admin access." });
+    const existingVendor = await getVendorBySlug(vendor.slug);
+    if (existingVendor) {
+      return res.status(400).json({ error: "A vendor with this slug already exists." });
     }
 
-    req.user = user;
-    return next();
-  } catch (error) {
-    return res.status(401).json({
-      error: error?.message || "Unable to verify admin credentials.",
+    const createdUser = await createSupabaseAuthUser({
+      email: vendor.adminEmail,
+      password: vendor.adminPassword,
+      fullName: vendor.adminName,
     });
-  }
-}
 
-function toAmountInSmallestUnit(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return 0;
-  }
-  return Math.round(numeric * 100);
-}
-
-function computeOrderAmount(items) {
-  if (!Array.isArray(items)) {
-    return 0;
-  }
-
-  return items.reduce((sum, item) => {
-    const unitPrice = toAmountInSmallestUnit(item?.price);
-    const quantity = Number(item?.cartQuantity || 1);
-    const safeQty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
-    return sum + unitPrice * safeQty;
-  }, 0);
-}
-
-function createReference() {
-  return `eshop_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function normalizeEmail(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function isValidEmail(value) {
-  const email = normalizeEmail(value);
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function normalizeOrderPayload(payload = {}, authenticatedUser = null) {
-  const userId = authenticatedUser?.id || payload.userID || payload.userId || "";
-  const userEmail = authenticatedUser?.email || payload.userEmail || payload.user_email || "";
-
-  return {
-    userID: String(userId).trim(),
-    userEmail: normalizeEmail(userEmail),
-    orderDate: String(payload.orderDate || "").trim(),
-    orderTime: String(payload.orderTime || "").trim(),
-    orderAmount: Number(payload.orderAmount),
-    orderStatus: String(payload.orderStatus || "").trim(),
-    cartItems: Array.isArray(payload.cartItems) ? payload.cartItems : [],
-    shippingAddress:
-      payload.shippingAddress && typeof payload.shippingAddress === "object"
-        ? payload.shippingAddress
-        : {},
-    paymentGateway: String(payload.paymentGateway || "").trim(),
-    paymentReference: String(payload.paymentReference || "").trim(),
-    paymentStatus: String(payload.paymentStatus || "").trim(),
-    createdAt: payload.createdAt || null,
-    editedAt: payload.editedAt || null,
-  };
-}
-
-function validateOrderPayload(order) {
-  if (!order.userID) {
-    return "A signed-in user is required to save an order.";
-  }
-
-  if (!isValidEmail(order.userEmail)) {
-    return "A valid order email is required.";
-  }
-
-  if (!order.orderDate || !order.orderTime) {
-    return "Order date and time are required.";
-  }
-
-  if (!Number.isFinite(order.orderAmount) || order.orderAmount <= 0) {
-    return "Order amount must be greater than zero.";
-  }
-
-  if (!order.orderStatus) {
-    return "Order status is required.";
-  }
-
-  if (!Array.isArray(order.cartItems) || order.cartItems.length === 0) {
-    return "Order items are required.";
-  }
-
-  return "";
-}
-
-function toSupabaseOrderRecord(order) {
-  return {
-    user_id: order.userID,
-    user_email: order.userEmail,
-    order_date: order.orderDate,
-    order_time: order.orderTime,
-    order_amount: order.orderAmount,
-    order_status: order.orderStatus,
-    cart_items: order.cartItems,
-    shipping_address: order.shippingAddress,
-    payment_gateway: order.paymentGateway,
-    payment_reference: order.paymentReference,
-    payment_status: order.paymentStatus,
-    created_at: toIsoString(order.createdAt),
-    edited_at: order.editedAt ? toIsoString(order.editedAt) : null,
-  };
-}
-
-function normalizeReviewPayload(payload = {}, authenticatedUser = null) {
-  return {
-    userID: String(authenticatedUser?.id || payload.userID || "").trim(),
-    userName: String(payload.userName || "").trim(),
-    productID: String(payload.productID || "").trim(),
-    rate: Number(payload.rate),
-    review: String(payload.review || "").trim(),
-    reviewDate: String(payload.reviewDate || "").trim(),
-    createdAt: payload.createdAt || null,
-  };
-}
-
-function validateReviewPayload(review) {
-  if (!review.userID) {
-    return "A signed-in user is required to submit a review.";
-  }
-
-  if (!review.userName) {
-    return "Reviewer name is required.";
-  }
-
-  if (!review.productID) {
-    return "A product is required for the review.";
-  }
-
-  if (!Number.isFinite(review.rate) || review.rate <= 0) {
-    return "A review rating is required.";
-  }
-
-  if (!review.review) {
-    return "Review text is required.";
-  }
-
-  return "";
-}
-
-function toSupabaseReviewRecord(review) {
-  return {
-    user_id: review.userID,
-    user_name: review.userName,
-    product_id: review.productID,
-    rate: review.rate,
-    review: review.review,
-    review_date: review.reviewDate,
-    created_at: toIsoString(review.createdAt),
-  };
-}
-
-function paystackRequest(method, pathname, payload) {
-  return new Promise((resolve, reject) => {
-    const body = payload ? JSON.stringify(payload) : null;
-    const request = https.request(
+    const vendorRows = await supabaseRestRequest(
+      "POST",
+      buildTablePath(config.tables.vendors, "select=*"),
       {
-        hostname: PAYSTACK_API_HOST,
-        path: pathname,
-        method,
-        headers: {
-          Authorization: `Bearer ${paystackSecretKey}`,
-          Accept: "application/json",
-          ...(body
-            ? {
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(body),
-              }
-            : {}),
-        },
-      },
-      (response) => {
-        let rawData = "";
+        name: vendor.name,
+        slug: vendor.slug,
+        description: vendor.description,
+        logo_url: vendor.logoURL,
+        banner_url: vendor.bannerURL,
+        status: vendor.status,
+        license_status: vendor.licenseStatus,
+        currency: vendor.currency,
+      }
+    );
+    const createdVendor = Array.isArray(vendorRows) ? vendorRows[0] : vendorRows;
 
-        response.on("data", (chunk) => {
-          rawData += chunk;
-        });
+    await insertProfile({
+      id: createdUser.id,
+      email: vendor.adminEmail,
+      full_name: vendor.adminName,
+      role: APP_ROLES.VENDOR_ADMIN,
+      is_active: true,
+    });
 
-        response.on("end", () => {
-          try {
-            const parsed = rawData ? JSON.parse(rawData) : {};
-
-            if (response.statusCode >= 200 && response.statusCode < 300) {
-              resolve(parsed);
-              return;
-            }
-
-            const error = new Error(
-              parsed?.message || `Paystack request failed with status ${response.statusCode}`
-            );
-            error.statusCode = response.statusCode;
-            reject(error);
-          } catch (error) {
-            reject(error);
-          }
-        });
+    await supabaseRestRequest(
+      "POST",
+      buildTablePath(config.tables.vendorAdmins, "select=*"),
+      {
+        vendor_id: createdVendor.id,
+        user_id: createdUser.id,
+        is_primary: true,
       }
     );
 
-    request.on("error", reject);
-    if (body) {
-      request.write(body);
+    if (vendor.subaccountCode) {
+      await supabaseRestRequest(
+        "POST",
+        buildTablePath(config.tables.vendorPaystackAccounts, "select=*"),
+        {
+          vendor_id: createdVendor.id,
+          subaccount_code: vendor.subaccountCode,
+          business_name: vendor.name,
+          percentage_charge: vendor.percentageCharge,
+          is_active: true,
+        }
+      );
     }
-    request.end();
-  });
-}
+
+    res.status(201).json(await getVendorManagementRecord(createdVendor));
+  } catch (error) {
+    res.status(500).json({ error: error?.message || "Failed to create vendor." });
+  }
+});
+
+app.patch("/super-admin/vendors/:id/status", requireSuperAdminUser, async (req, res) => {
+  try {
+    const vendorId = String(req.params.id || "").trim();
+    const status = String(req.body?.status || "").trim();
+
+    if (!vendorId) {
+      return res.status(400).json({ error: "Vendor ID is required." });
+    }
+
+    if (!["active", "disabled", "suspended"].includes(status)) {
+      return res.status(400).json({ error: "Vendor status is invalid." });
+    }
+
+    const memberships = await getVendorMembershipsByVendorId(vendorId);
+    const primaryMembership =
+      memberships.find((membership) => membership.is_primary) || memberships[0] || null;
+
+    const query = new URLSearchParams({ id: `eq.${vendorId}`, select: "*" });
+    const rows = await supabaseRestRequest(
+      "PATCH",
+      buildTablePath(config.tables.vendors, query.toString()),
+      { status }
+    );
+    const updatedVendor = Array.isArray(rows) ? rows[0] : rows;
+
+    if (primaryMembership?.user_id) {
+      await updateProfile(primaryMembership.user_id, { is_active: status === "active" });
+    }
+
+    res.json(await getVendorManagementRecord(updatedVendor));
+  } catch (error) {
+    res.status(500).json({ error: error?.message || "Failed to update vendor status." });
+  }
+});
+
+app.post("/super-admin/vendors/:id/reset-password", requireSuperAdminUser, async (req, res) => {
+  try {
+    const vendorId = String(req.params.id || "").trim();
+    const password = String(req.body?.password || "").trim();
+
+    if (!vendorId) {
+      return res.status(400).json({ error: "Vendor ID is required." });
+    }
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters." });
+    }
+
+    const memberships = await getVendorMembershipsByVendorId(vendorId);
+    const primaryMembership =
+      memberships.find((membership) => membership.is_primary) || memberships[0] || null;
+
+    if (!primaryMembership?.user_id) {
+      return res.status(404).json({ error: "Vendor admin was not found." });
+    }
+
+    await updateSupabaseAuthUser(primaryMembership.user_id, { password });
+    res.json({ success: true, vendorId });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || "Failed to reset vendor password." });
+  }
+});
+
+app.get("/admin/categories", requireVendorManagerUser, async (req, res) => {
+  try {
+    const vendorId = resolveManagedVendorId(req.userContext, getRequestedVendorId(req));
+    res.json(await listVendorCategories(vendorId));
+  } catch (error) {
+    res.status(403).json({ error: error?.message || "Failed to load categories." });
+  }
+});
+
+app.post("/admin/categories", requireVendorManagerUser, async (req, res) => {
+  try {
+    const vendorId = resolveManagedVendorId(req.userContext, getRequestedVendorId(req));
+    const category = normalizeCategoryPayload({ ...req.body, vendorID: vendorId });
+    const validationError = validateCategoryPayload(category);
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const rows = await supabaseRestRequest(
+      "POST",
+      buildTablePath(config.tables.vendorCategories, "select=*"),
+      {
+        vendor_id: category.vendorID,
+        name: category.name,
+        slug: category.slug,
+        is_active: category.isActive,
+      }
+    );
+
+    res.status(201).json(Array.isArray(rows) ? rows[0] : rows);
+  } catch (error) {
+    res.status(500).json({ error: error?.message || "Failed to create category." });
+  }
+});
+
+app.put("/admin/categories/:id", requireVendorManagerUser, async (req, res) => {
+  try {
+    const categoryId = String(req.params.id || "").trim();
+    const vendorId = resolveManagedVendorId(req.userContext, getRequestedVendorId(req));
+    const existingCategory = await getVendorCategoryById(categoryId);
+
+    if (!existingCategory) {
+      return res.status(404).json({ error: "Category not found." });
+    }
+    if (existingCategory.vendor_id !== vendorId) {
+      return res.status(403).json({ error: "You do not have access to this category." });
+    }
+
+    const category = normalizeCategoryPayload({ ...req.body, vendorID: vendorId });
+    const validationError = validateCategoryPayload(category);
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const query = new URLSearchParams({ id: `eq.${categoryId}`, select: "*" });
+    const rows = await supabaseRestRequest(
+      "PATCH",
+      buildTablePath(config.tables.vendorCategories, query.toString()),
+      {
+        name: category.name,
+        slug: category.slug,
+        is_active: category.isActive,
+      }
+    );
+
+    res.json(Array.isArray(rows) ? rows[0] : rows);
+  } catch (error) {
+    res.status(500).json({ error: error?.message || "Failed to update category." });
+  }
+});
+
+app.delete("/admin/categories/:id", requireVendorManagerUser, async (req, res) => {
+  try {
+    const categoryId = String(req.params.id || "").trim();
+    const vendorId = resolveManagedVendorId(req.userContext, getRequestedVendorId(req));
+    const category = await getVendorCategoryById(categoryId);
+
+    if (!category) {
+      return res.status(404).json({ error: "Category not found." });
+    }
+    if (category.vendor_id !== vendorId) {
+      return res.status(403).json({ error: "You do not have access to this category." });
+    }
+
+    const query = new URLSearchParams({ id: `eq.${categoryId}` });
+    await supabaseRestRequest(
+      "DELETE",
+      buildTablePath(config.tables.vendorCategories, query.toString()),
+      undefined,
+      { prefer: "" }
+    );
+
+    res.json({ success: true, id: categoryId });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || "Failed to delete category." });
+  }
+});
 
 app.post("/initialize-payment", async (req, res) => {
   try {
-    if (!hasUsablePaystackSecret(paystackSecretKey)) {
+    if (!hasUsablePaystackSecret()) {
       return res.status(503).json({
-        error:
-          "Paystack secret key is missing or still set to the example value in backend/.env",
+        error: "Paystack secret key is missing or still set to the example value in backend/.env",
       });
     }
 
     const { items, userEmail, shipping, billing, description } = req.body || {};
     const amount = computeOrderAmount(items);
-    const currency = (process.env.PAYSTACK_CURRENCY || "NGN").toUpperCase();
     const reference = createReference();
     const normalizedEmail = normalizeEmail(userEmail);
+    const vendorIds = collectUniqueVendorIds(items);
 
     if (!isValidEmail(normalizedEmail)) {
-      return res.status(400).json({
-        error: "A valid customer email is required for Paystack checkout.",
-      });
+      return res.status(400).json({ error: "A valid customer email is required for checkout." });
     }
-
     if (!amount) {
-      return res.status(400).json({ error: "Cart amount is invalid" });
+      return res.status(400).json({ error: "Cart amount is invalid." });
+    }
+    if (vendorIds.length !== 1) {
+      return res.status(400).json({ error: "Checkout only supports one vendor at a time." });
     }
 
-    const initialization = await paystackRequest("POST", "/transaction/initialize", {
+    const vendor = await getVendorById(vendorIds[0]);
+    const paystackAccount = await getVendorPaystackAccount(vendorIds[0]);
+
+    if (!vendor) {
+      return res.status(400).json({ error: "Vendor was not found for this cart." });
+    }
+
+    const payload = {
       email: normalizedEmail,
       amount,
-      currency,
+      currency: config.paystackCurrency,
       reference,
       channels: ["card"],
       metadata: {
-        description: description || "Checkout payment",
+        description: description || "Marketplace checkout payment",
         shipping: shipping || {},
         billing: billing || {},
+        vendor_id: vendor.id,
+        vendor_slug: vendor.slug,
       },
-    });
+    };
+
+    if (paystackAccount?.is_active && paystackAccount?.subaccount_code) {
+      payload.subaccount = paystackAccount.subaccount_code;
+    }
+
+    const initialization = await paystackRequest("POST", "/transaction/initialize", payload);
     const transaction = initialization?.data;
 
     if (!initialization?.status || !transaction?.access_code) {
-      return res.status(502).json({
-        error: "Invalid Paystack initialization response.",
-      });
+      return res.status(502).json({ error: "Invalid Paystack initialization response." });
     }
 
-    return res.json({
+    res.json({
       accessCode: transaction.access_code,
       amount,
       authorizationUrl: transaction.authorization_url,
-      currency,
+      currency: config.paystackCurrency,
       email: normalizedEmail,
       reference: transaction.reference || reference,
+      vendorID: vendor.id,
+      vendorSlug: vendor.slug,
     });
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to initialize payment",
-    });
+    res.status(500).json({ error: error?.message || "Failed to initialize payment." });
   }
 });
 
 app.post("/verify-payment", async (req, res) => {
   try {
-    if (!hasUsablePaystackSecret(paystackSecretKey)) {
+    if (!hasUsablePaystackSecret()) {
       return res.status(503).json({
-        error:
-          "Paystack secret key is missing or still set to the example value in backend/.env",
+        error: "Paystack secret key is missing or still set to the example value in backend/.env",
       });
     }
 
     const { items, reference } = req.body || {};
     const expectedAmount = computeOrderAmount(items);
-    const expectedCurrency = (process.env.PAYSTACK_CURRENCY || "NGN").toUpperCase();
 
     if (!reference) {
       return res.status(400).json({ error: "Payment reference is required." });
     }
-
     if (!expectedAmount) {
-      return res.status(400).json({ error: "Cart amount is invalid" });
+      return res.status(400).json({ error: "Cart amount is invalid." });
     }
 
     const verification = await paystackRequest(
@@ -541,18 +487,13 @@ app.post("/verify-payment", async (req, res) => {
     }
 
     if (Number(transaction.amount) !== expectedAmount) {
-      return res.status(400).json({
-        error: "Verified amount does not match the cart total.",
-      });
+      return res.status(400).json({ error: "Verified amount does not match the cart total." });
+    }
+    if ((transaction.currency || "").toUpperCase() !== config.paystackCurrency) {
+      return res.status(400).json({ error: "Verified currency does not match configuration." });
     }
 
-    if ((transaction.currency || "").toUpperCase() !== expectedCurrency) {
-      return res.status(400).json({
-        error: "Verified currency does not match the configured currency.",
-      });
-    }
-
-    return res.json({
+    res.json({
       amount: transaction.amount,
       paidAt: transaction.paid_at || transaction.paidAt || null,
       reference: transaction.reference,
@@ -560,285 +501,262 @@ app.post("/verify-payment", async (req, res) => {
       verified: true,
     });
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to verify payment",
-    });
+    res.status(500).json({ error: error?.message || "Failed to verify payment." });
   }
 });
 
 app.post("/orders", requireAuthenticatedUser, async (req, res) => {
   try {
-    const order = normalizeOrderPayload(req.body, req.user);
-    const validationError = validateOrderPayload(order);
+    const vendorIds = collectUniqueVendorIds(req.body?.cartItems || []);
+    const order = normalizeOrderPayload(req.body, req.userContext, vendorIds[0] || "");
+    const validationError = validateOrderPayload(order, isValidEmail);
 
     if (validationError) {
       return res.status(400).json({ error: validationError });
     }
 
+    const vendor = await getVendorById(order.vendorID);
+    if (!vendor) {
+      return res.status(400).json({ error: "Vendor was not found for this order." });
+    }
+
     const rows = await supabaseRestRequest(
       "POST",
-      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?select=*`,
+      buildTablePath(config.tables.orders, "select=*"),
       toSupabaseOrderRecord(order)
     );
-    const createdOrder = Array.isArray(rows) ? rows[0] : rows;
-    return res.status(201).json(createdOrder);
+
+    res.status(201).json(Array.isArray(rows) ? rows[0] : rows);
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to create order.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to create order." });
   }
 });
 
 app.get("/orders", requireAuthenticatedUser, async (req, res) => {
   try {
-    const query = new URLSearchParams({
-      select: "*",
-      order: "created_at.desc",
-    });
+    const context = req.userContext;
+    const filters = {};
 
-    if (req.query.scope !== "all" || !adminUids.has(req.user.id)) {
-      query.set("user_id", `eq.${req.user.id}`);
+    if (!(context.isSuperAdmin && req.query.scope === "all")) {
+      if (context.isVendorAdmin) {
+        filters.vendor_id = context.vendor.id;
+      } else {
+        filters.user_id = context.user.id;
+      }
     }
 
-    const rows = await supabaseRestRequest(
-      "GET",
-      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`
-    );
-
-    return res.json(Array.isArray(rows) ? rows : []);
+    res.json(await queryManyRows(config.tables.orders, filters, { order: "created_at.desc" }));
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to load orders.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to load orders." });
   }
 });
 
 app.get("/orders/:id", requireAuthenticatedUser, async (req, res) => {
   try {
-    const orderId = String(req.params.id || "").trim();
-
-    if (!orderId) {
-      return res.status(400).json({ error: "Order ID is required." });
-    }
-
-    const query = new URLSearchParams({
-      select: "*",
-      id: `eq.${orderId}`,
-    });
-    const rows = await supabaseRestRequest(
-      "GET",
-      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`
-    );
-    const order = Array.isArray(rows) ? rows[0] : rows;
-
+    const order = await querySingleOrder(req.params.id);
     if (!order) {
       return res.status(404).json({ error: "Order not found." });
     }
 
-    if (!adminUids.has(req.user.id) && order.user_id !== req.user.id) {
+    const context = req.userContext;
+    if (
+      !context.isSuperAdmin &&
+      !(
+        (context.isVendorAdmin && order.vendor_id === context.vendor.id) ||
+        order.user_id === context.user.id
+      )
+    ) {
       return res.status(403).json({ error: "You do not have access to this order." });
     }
 
-    return res.json(order);
+    res.json(order);
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to load the order.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to load the order." });
   }
 });
 
-app.patch("/admin/orders/:id/status", requireAdminUser, async (req, res) => {
+async function querySingleOrder(orderId) {
+  const rows = await queryManyRows(config.tables.orders, { id: orderId });
+  return rows[0] || null;
+}
+
+app.patch("/admin/orders/:id/status", requireVendorManagerUser, async (req, res) => {
   try {
-    const orderId = String(req.params.id || "").trim();
-    const status = String(req.body?.status || "").trim();
-
-    if (!orderId) {
-      return res.status(400).json({ error: "Order ID is required." });
+    const order = await querySingleOrder(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
     }
 
-    if (!status) {
-      return res.status(400).json({ error: "Order status is required." });
+    if (!req.userContext.isSuperAdmin && order.vendor_id !== req.userContext.vendor.id) {
+      return res.status(403).json({ error: "You do not have access to this order." });
     }
 
-    const query = new URLSearchParams({
-      id: `eq.${orderId}`,
-      select: "*",
-    });
+    const query = new URLSearchParams({ id: `eq.${req.params.id}`, select: "*" });
     const rows = await supabaseRestRequest(
       "PATCH",
-      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`,
+      buildTablePath(config.tables.orders, query.toString()),
       {
-        order_status: status,
-        edited_at: new Date().toISOString(),
+        order_status: String(req.body?.status || "").trim(),
       }
     );
-    const updatedOrder = Array.isArray(rows) ? rows[0] : rows;
-    return res.json(updatedOrder);
+    res.json(Array.isArray(rows) ? rows[0] : rows);
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to update the order.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to update the order." });
   }
 });
 
-app.delete("/admin/orders/:id", requireAdminUser, async (req, res) => {
+app.delete("/admin/orders/:id", requireVendorManagerUser, async (req, res) => {
   try {
-    const orderId = String(req.params.id || "").trim();
-
-    if (!orderId) {
-      return res.status(400).json({ error: "Order ID is required." });
+    const order = await querySingleOrder(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
     }
 
-    const query = new URLSearchParams({
-      id: `eq.${orderId}`,
-    });
+    if (!req.userContext.isSuperAdmin && order.vendor_id !== req.userContext.vendor.id) {
+      return res.status(403).json({ error: "You do not have access to this order." });
+    }
+
+    const query = new URLSearchParams({ id: `eq.${req.params.id}` });
     await supabaseRestRequest(
       "DELETE",
-      `/rest/v1/${encodeURIComponent(supabaseOrdersTable)}?${query.toString()}`
+      buildTablePath(config.tables.orders, query.toString()),
+      undefined,
+      { prefer: "" }
     );
-    return res.json({ id: orderId, success: true });
+    res.json({ id: req.params.id, success: true });
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to delete the order.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to delete the order." });
   }
 });
 
 app.get("/reviews", async (req, res) => {
   try {
-    const query = new URLSearchParams({
-      select: "*",
-      order: "created_at.desc",
-    });
-
-    if (req.query.productId) {
-      query.set("product_id", `eq.${String(req.query.productId).trim()}`);
-    }
-
-    const rows = await supabaseRestRequest(
-      "GET",
-      `/rest/v1/${encodeURIComponent(supabaseReviewsTable)}?${query.toString()}`
-    );
-    return res.json(Array.isArray(rows) ? rows : []);
+    const filters = {};
+    if (req.query.productId) filters.product_id = String(req.query.productId).trim();
+    if (req.query.vendorId) filters.vendor_id = String(req.query.vendorId).trim();
+    res.json(await queryManyRows(config.tables.reviews, filters, { order: "created_at.desc" }));
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to load reviews.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to load reviews." });
   }
 });
 
 app.post("/reviews", requireAuthenticatedUser, async (req, res) => {
   try {
-    const review = normalizeReviewPayload(req.body, req.user);
+    const review = normalizeReviewPayload(req.body, req.userContext);
     const validationError = validateReviewPayload(review);
 
     if (validationError) {
       return res.status(400).json({ error: validationError });
     }
 
+    const product = await getProductById(review.productID);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found." });
+    }
+
     const rows = await supabaseRestRequest(
       "POST",
-      `/rest/v1/${encodeURIComponent(supabaseReviewsTable)}?select=*`,
-      toSupabaseReviewRecord(review)
+      buildTablePath(config.tables.reviews, "select=*"),
+      toSupabaseReviewRecord(review, product.vendor_id)
     );
-    const createdReview = Array.isArray(rows) ? rows[0] : rows;
-    return res.status(201).json(createdReview);
+    res.status(201).json(Array.isArray(rows) ? rows[0] : rows);
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to create review.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to create review." });
   }
 });
 
-app.post("/admin/products", requireAdminUser, async (req, res) => {
+app.post("/admin/products", requireVendorManagerUser, async (req, res) => {
   try {
-    const product = normalizeProductPayload(req.body);
+    const vendorId = resolveManagedVendorId(req.userContext, getRequestedVendorId(req));
+    const product = normalizeProductPayload({ ...req.body, vendorID: vendorId });
     const validationError = validateProductPayload(product);
 
     if (validationError) {
       return res.status(400).json({ error: validationError });
     }
 
+    const category = await getVendorCategoryById(product.categoryID);
+    if (!category || category.vendor_id !== vendorId) {
+      return res.status(403).json({ error: "Category does not belong to this vendor." });
+    }
+
+    product.category = category.name;
     const rows = await supabaseRestRequest(
       "POST",
-      `/rest/v1/${encodeURIComponent(supabaseProductsTable)}?select=*`,
+      buildTablePath(config.tables.products, "select=*"),
       toSupabaseProductRecord(product)
     );
+
     const createdProduct = Array.isArray(rows) ? rows[0] : rows;
-    return res.status(201).json({
-      id: createdProduct?.id,
-      product: createdProduct,
-      success: true,
-    });
+    res.status(201).json({ id: createdProduct?.id, product: createdProduct, success: true });
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to create product.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to create product." });
   }
 });
 
-app.put("/admin/products/:id", requireAdminUser, async (req, res) => {
+app.put("/admin/products/:id", requireVendorManagerUser, async (req, res) => {
   try {
-    const productId = String(req.params.id || "").trim();
-    const product = normalizeProductPayload(req.body);
-    const validationError = validateProductPayload(product);
-
-    if (!productId) {
-      return res.status(400).json({ error: "Product ID is required." });
+    const existingProduct = await getProductById(req.params.id);
+    if (!existingProduct) {
+      return res.status(404).json({ error: "Product not found." });
     }
+
+    const vendorId = resolveManagedVendorId(req.userContext, getRequestedVendorId(req));
+    if (!req.userContext.isSuperAdmin && existingProduct.vendor_id !== vendorId) {
+      return res.status(403).json({ error: "You do not have access to this product." });
+    }
+
+    const product = normalizeProductPayload({ ...req.body, vendorID: vendorId });
+    const validationError = validateProductPayload(product);
 
     if (validationError) {
       return res.status(400).json({ error: validationError });
     }
 
-    const query = new URLSearchParams({
-      id: `eq.${productId}`,
-      select: "*",
-    });
+    const category = await getVendorCategoryById(product.categoryID);
+    if (!category || category.vendor_id !== vendorId) {
+      return res.status(403).json({ error: "Category does not belong to this vendor." });
+    }
+
+    product.category = category.name;
+    const query = new URLSearchParams({ id: `eq.${req.params.id}`, select: "*" });
     const rows = await supabaseRestRequest(
       "PATCH",
-      `/rest/v1/${encodeURIComponent(supabaseProductsTable)}?${query.toString()}`,
+      buildTablePath(config.tables.products, query.toString()),
       toSupabaseProductRecord(product)
     );
+
     const updatedProduct = Array.isArray(rows) ? rows[0] : rows;
-    return res.json({
-      id: productId,
-      product: updatedProduct,
-      success: true,
-    });
+    res.json({ id: req.params.id, product: updatedProduct, success: true });
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to update product.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to update product." });
   }
 });
 
-app.delete("/admin/products/:id", requireAdminUser, async (req, res) => {
+app.delete("/admin/products/:id", requireVendorManagerUser, async (req, res) => {
   try {
-    const productId = String(req.params.id || "").trim();
-
-    if (!productId) {
-      return res.status(400).json({ error: "Product ID is required." });
+    const product = await getProductById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found." });
+    }
+    if (!req.userContext.isSuperAdmin && product.vendor_id !== req.userContext.vendor.id) {
+      return res.status(403).json({ error: "You do not have access to this product." });
     }
 
-    const query = new URLSearchParams({
-      id: `eq.${productId}`,
-    });
+    const query = new URLSearchParams({ id: `eq.${req.params.id}` });
     await supabaseRestRequest(
       "DELETE",
-      `/rest/v1/${encodeURIComponent(supabaseProductsTable)}?${query.toString()}`
+      buildTablePath(config.tables.products, query.toString()),
+      undefined,
+      { prefer: "" }
     );
-    return res.json({
-      id: productId,
-      success: true,
-    });
+
+    res.json({ id: req.params.id, success: true });
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "Failed to delete product.",
-    });
+    res.status(500).json({ error: error?.message || "Failed to delete product." });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
+app.listen(config.port, () => {
+  console.log(`Backend running on http://localhost:${config.port}`);
 });

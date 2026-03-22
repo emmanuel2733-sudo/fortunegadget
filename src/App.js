@@ -10,7 +10,7 @@ import Reset from "./pages/auth/Reset";
 import { ToastContainer } from 'react-toastify';
 import "react-toastify/dist/ReactToastify.css";
 import Admin from "./pages/admin/Admin"
-import AdminOnlyRoute from "./components/adminOnlyRoute/AdminOnlyRoute";
+import { SuperAdminOnlyRoute, VendorAdminOnlyRoute } from "./components/adminOnlyRoute/AdminOnlyRoute";
 import ProductDetails from "./components/product/productDetails/ProductDetails";
 import Cart from "./pages/cart/Cart";
 import Checkout from "./pages/checkout/Checkout";
@@ -21,6 +21,8 @@ import OrderDetails from "./pages/orderDetails/OrderDetails";
 import ReviewProducts from "./components/reviewProducts/ReviewProducts";
 import Contact from "./pages/contact/Contact";
 import NotFound from "./pages/notFound/NotFound";
+import SuperAdmin from "./pages/superAdmin/SuperAdmin";
+import Storefront from "./pages/store/Storefront";
 
 
 
@@ -43,8 +45,11 @@ const App = () => {
           <Route path="/login" element={ <Login/> } />
           <Route path="/register" element={ <Register/> } />
           <Route path="/reset" element={ <Reset/> } />
-          <Route path="/admin/*" element={<AdminOnlyRoute> <Admin/> </AdminOnlyRoute> } />
+          <Route path="/admin/*" element={<VendorAdminOnlyRoute> <Admin/> </VendorAdminOnlyRoute> } />
+          <Route path="/super-admin/*" element={<SuperAdminOnlyRoute> <SuperAdmin/> </SuperAdminOnlyRoute> } />
           <Route path="/product-details/:id" element={ <ProductDetails/> } />
+          <Route path="/store/:vendorSlug" element={ <Storefront/> } />
+          <Route path="/store/:vendorSlug/product/:id" element={ <ProductDetails/> } />
           <Route path="/cart" element={ <Cart/> } />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/checkout-success" element={<CheckoutSuccess />} />

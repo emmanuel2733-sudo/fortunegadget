@@ -1,0 +1,48 @@
+.vendors {
+  display: grid;
+  gap: 2rem;
+}
+
+.panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 42rem;
+}
+
+.list {
+  display: grid;
+  gap: 1rem;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 0.4rem;
+}
+
+.actions {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 16rem;
+}
+
+@media screen and (max-width: 900px) {
+  .item {
+    flex-direction: column;
+  }
+
+  .actions {
+    min-width: 0;
+  }
+}

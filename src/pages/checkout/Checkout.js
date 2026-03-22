@@ -45,6 +45,13 @@ const Checkout = () => {
     ...billingAddress,
     email: normalizeEmail(billingAddress?.email),
   };
+  const uniqueVendorIds = [
+    ...new Set(
+      cartItems
+        .map((item) => String(item?.vendorID || "").trim())
+        .filter(Boolean)
+    ),
+  ];
 
   const dispatch = useDispatch();
 
@@ -73,6 +80,12 @@ const Checkout = () => {
     if (!customerEmail || !isValidEmail(customerEmail)) {
       setPaymentConfig(null);
       setMessage("Sign in with a valid account email before continuing to checkout.");
+      return;
+    }
+
+    if (uniqueVendorIds.length > 1) {
+      setPaymentConfig(null);
+      setMessage("Checkout only supports one vendor at a time. Clear your cart and try again.");
       return;
     }
 
@@ -116,6 +129,7 @@ const Checkout = () => {
     description,
     isAuthReady,
     shippingAddress,
+    uniqueVendorIds.length,
   ]);
 
   if (isAuthConfigured() && !isAuthReady) {

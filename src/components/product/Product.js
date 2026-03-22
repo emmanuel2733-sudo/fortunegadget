@@ -11,8 +11,11 @@ import { normalizeProductCategory } from '../../utils/category'
 import Card from '../card/Card';
 
 
-const Product = () => {
-  const {data, isLoading, error} = useFetchCollection("products");
+const Product = ({ vendorId = "", vendorSlug = "", heading = "" }) => {
+  const {data, isLoading, error} = useFetchCollection("products", {
+    vendorId,
+    vendorSlug,
+  });
   const [showFilter, setShowFilter] = useState(false);
   const products = useSelector(selectProducts); 
   const dispatch = useDispatch();
@@ -44,6 +47,7 @@ const Product = () => {
   return (
     <section>
       <div className={`container ${styles.product}`}>
+        {heading ? <h2>{heading}</h2> : null}
         <aside className={showFilter ? `${styles.filter} ${styles.show}`: `${styles.filter}`}>
           {isLoading ? null :<ProductFilter />}
         </aside>
